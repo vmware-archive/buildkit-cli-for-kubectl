@@ -11,7 +11,7 @@ import (
 )
 
 func runVersion(streams genericclioptions.IOStreams) error {
-	fmt.Println(version.Version, version.Revision)
+	fmt.Println(version.Version)
 	return nil
 }
 

@@ -1,0 +1,84 @@
+name: pull-request
+
+on:
+  pull_request:
+    branches: [ main ]
+
+env:
+  GO_VERSION: "1.15"
+
+jobs:
+  test-unit:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+    - name: Unit Tests
+      run: make test
+    - name: Codecov
+      uses: codecov/codecov-action@v1
+      with:
+        file: cover-unit.out 
+        flags: unit-tests
+        name: codecov-unit-test
+
+  test-integration:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+    - name: Setup kind cluster
+      run: |
+        set -x
+        # kind configuration.
+        cat > kind.yaml <<EOF
+        apiVersion: kind.x-k8s.io/v1alpha4
+        kind: Cluster
+        nodes:
+        - role: control-plane
+        - role: worker
+        EOF
+        # Create a cluster!
+        kind create cluster --config kind.yaml
+    - name: Run integration tests
+      run: make integration EXTRA_GO_TEST_FLAGS=-v
+    - name: Gather integration coverage results
+      uses: codecov/codecov-action@v1
+      with:
+        file: cover-int.out 
+        flags: integration-tests
+        name: codecov-integration-test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - name: Check-out code
+      uses: actions/checkout@v2
+    - name: Lint
+      uses: golangci/golangci-lint-action@v2
+      with:
+        version: v1.29
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+    - name: Build
+      run: make build-ci

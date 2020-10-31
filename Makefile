@@ -1,8 +1,7 @@
 # Copyright (C) 2020 VMware, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-include ver
-
+VERSION?=$(shell git describe --tags --first-parent --abbrev=7 --long --dirty --always)
 TEST_KUBECONFIG?=$(HOME)/.kube/config
 
 # Verify Go in PATH
@@ -21,9 +20,9 @@ CI_BUILD_TARGETS=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os)/kubectl-buildkit $(BIN
 CI_ARCHIVES=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os).tgz)
 
 GO_MOD_NAME=github.com/vmware-tanzu/buildkit-cli-for-kubectl
-GO_DEPS=$(foreach dir,$(shell go list -deps -f '{{.Dir}}' ./cmd/kubectl-buildkit ./cmd/kubectl-build),$(wildcard $(dir)/*.go)) ver Makefile
+GO_DEPS=$(foreach dir,$(shell go list -deps -f '{{.Dir}}' ./cmd/kubectl-buildkit ./cmd/kubectl-build),$(wildcard $(dir)/*.go)) Makefile
 REVISION=$(shell git describe --match 'v[0-9]*' --always --dirty --tags)
-GO_FLAGS=-ldflags "-X $(GO_MOD_NAME)/version.Version=${VERSION} -X $(GO_MOD_NAME)/version.Revision=${REVISION}" -mod=vendor
+GO_FLAGS=-ldflags "-X $(GO_MOD_NAME)/version.Version=${VERSION}" -mod=vendor
 GO_COVER_FLAGS=-cover -coverpkg=./... -covermode=count
 
 .PHONY: help
@@ -67,7 +66,7 @@ test:
 integration:
 	@echo "Running integration tests with $(TEST_KUBECONFIG)"
 	@kubectl config get-contexts
-	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test $(GO_FLAGS)  \
+	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test $(GO_FLAGS) $(EXTRA_GO_TEST_FLAGS)  \
 		$(GO_COVER_FLAGS) -coverprofile=./cover-int.out \
 		./integration/...
 
