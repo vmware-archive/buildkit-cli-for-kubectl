@@ -10,6 +10,8 @@ import (
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	commands "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/cmd"
+
+	// Import the kubernetes driver so we can exercise its code paths
 	_ "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes"
 )
 
