@@ -87,7 +87,7 @@ func NewMultiWriter(pw Writer) *MultiWriter {
 
 	go func() {
 		<-ready
-		eg.Wait()
+		_ = eg.Wait()
 		close(pw.Status())
 	}()
 

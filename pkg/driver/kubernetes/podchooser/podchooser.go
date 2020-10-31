@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package podchooser
 
 import (
@@ -25,7 +27,7 @@ type RandomPodChooser struct {
 }
 
 func (pc *RandomPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) {
-	pods, err := ListRunningPods(pc.PodClient, pc.Deployment)
+	pods, err := ListRunningPods(ctx, pc.PodClient, pc.Deployment)
 	if err != nil {
 		return nil, err
 	}
@@ -46,7 +48,7 @@ type StickyPodChooser struct {
 }
 
 func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) {
-	pods, err := ListRunningPods(pc.PodClient, pc.Deployment)
+	pods, err := ListRunningPods(ctx, pc.PodClient, pc.Deployment)
 	if err != nil {
 		return nil, err
 	}
@@ -70,18 +72,24 @@ func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) 
 	return podMap[chosen], nil
 }
 
-func ListRunningPods(client clientcorev1.PodInterface, depl *appsv1.Deployment) ([]*corev1.Pod, error) {
-	selector, err := metav1.LabelSelectorAsSelector(depl.Spec.Selector)
+func ListRunningPods(ctx context.Context, client clientcorev1.PodInterface, depl *appsv1.Deployment) ([]*corev1.Pod, error) {
+	labelSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": depl.ObjectMeta.Name,
+		},
+	}
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		return nil, err
 	}
 	listOpts := metav1.ListOptions{
 		LabelSelector: selector.String(),
 	}
-	podList, err := client.List(listOpts)
+	podList, err := client.List(ctx, listOpts)
 	if err != nil {
 		return nil, err
 	}
+	// TODO further filter pods based on Annotations
 	var runningPods []*corev1.Pod
 	for i := range podList.Items {
 		pod := &podList.Items[i]

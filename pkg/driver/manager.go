@@ -1,10 +1,11 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package driver
 
 import (
 	"context"
 	"sort"
 
-	dockerclient "github.com/docker/docker/client"
 	"github.com/pkg/errors"
 	"k8s.io/client-go/tools/clientcmd"
 )
@@ -12,7 +13,7 @@ import (
 type Factory interface {
 	Name() string
 	Usage() string
-	Priority(context.Context, dockerclient.APIClient) int
+	Priority(context.Context) int
 	New(ctx context.Context, cfg InitConfig) (Driver, error)
 	AllowsInstances() bool
 }
@@ -24,8 +25,8 @@ type BuildkitConfig struct {
 
 type InitConfig struct {
 	// This object needs updates to be generic for different drivers
-	Name             string
-	DockerAPI        dockerclient.APIClient
+	Name string
+	//DockerAPI        dockerclient.APIClient
 	KubeClientConfig clientcmd.ClientConfig
 	BuildkitFlags    []string
 	ConfigFile       string
@@ -43,7 +44,7 @@ func Register(f Factory) {
 	drivers[f.Name()] = f
 }
 
-func GetDefaultFactory(ctx context.Context, c dockerclient.APIClient, instanceRequired bool) (Factory, error) {
+func GetDefaultFactory(ctx context.Context, instanceRequired bool) (Factory, error) {
 	if len(drivers) == 0 {
 		return nil, errors.Errorf("no drivers available")
 	}
@@ -56,7 +57,7 @@ func GetDefaultFactory(ctx context.Context, c dockerclient.APIClient, instanceRe
 		if instanceRequired && !f.AllowsInstances() {
 			continue
 		}
-		dd = append(dd, p{f: f, priority: f.Priority(ctx, c)})
+		dd = append(dd, p{f: f, priority: f.Priority(ctx)})
 	}
 	sort.Slice(dd, func(i, j int) bool {
 		return dd[i].priority < dd[j].priority
@@ -65,21 +66,24 @@ func GetDefaultFactory(ctx context.Context, c dockerclient.APIClient, instanceRe
 }
 
 func GetFactory(name string, instanceRequired bool) Factory {
+	validNames := make([]string, len(drivers))
+	i := int(0)
 	for _, f := range drivers {
+		i++
 		if instanceRequired && !f.AllowsInstances() {
 			continue
 		}
 		if f.Name() == name {
 			return f
 		}
+		validNames[i] = f.Name()
 	}
 	return nil
 }
 
-func GetDriver(ctx context.Context, name string, f Factory, api dockerclient.APIClient, kcc clientcmd.ClientConfig, flags []string, config string, do map[string]string, contextPathHash string) (Driver, error) {
+func GetDriver(ctx context.Context, name string, f Factory, kubeClientConfig clientcmd.ClientConfig /*kcc clientcmd.ClientConfig,*/, flags []string, config string, do map[string]string, contextPathHash string) (Driver, error) {
 	ic := InitConfig{
-		DockerAPI:        api,
-		KubeClientConfig: kcc,
+		KubeClientConfig: kubeClientConfig,
 		Name:             name,
 		BuildkitFlags:    flags,
 		ConfigFile:       config,
@@ -88,7 +92,7 @@ func GetDriver(ctx context.Context, name string, f Factory, api dockerclient.API
 	}
 	if f == nil {
 		var err error
-		f, err = GetDefaultFactory(ctx, api, false)
+		f, err = GetDefaultFactory(ctx, false)
 		if err != nil {
 			return nil, err
 		}

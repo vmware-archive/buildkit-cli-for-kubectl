@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package commands
 
 import (
@@ -6,21 +8,32 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/docker/buildx/build"
-	"github.com/docker/buildx/util/platformutil"
-	"github.com/docker/buildx/util/progress"
-	"github.com/docker/cli/cli"
-	"github.com/docker/cli/cli/command"
 	"github.com/moby/buildkit/client"
-	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/build"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/platformutil"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+
+	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/client-go/tools/clientcmd/api"
+
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
+// BuildOptions provides information required to update
+// the current context on a user's KUBECONFIG
 type buildOptions struct {
+	commonKubeOptions
 	commonOptions
+
+	//listBuilds bool
+	//args       []string
+
+	// Replicated from buildx
 	contextPath    string
 	dockerfileName string
 	tags           []string
@@ -44,6 +57,8 @@ type buildOptions struct {
 
 	allow []string
 
+	frontend string
+
 	// hidden
 	// untrusted   bool
 	// ulimits        *opts.UlimitOpt
@@ -62,15 +77,31 @@ type buildOptions struct {
 }
 
 type commonOptions struct {
-	builder    string
-	noCache    *bool
-	progress   string
-	pull       *bool
-	exportPush bool
-	exportLoad bool
+	builder            string
+	noCache            *bool
+	progress           string
+	pull               *bool
+	exportPush         bool
+	exportLoad         bool
+	registrySecretName string
 }
 
-func runBuild(dockerCli command.Cli, in buildOptions) error {
+type commonKubeOptions struct {
+	genericclioptions.IOStreams
+
+	configFlags      *genericclioptions.ConfigFlags
+	KubeClientConfig clientcmd.ClientConfig
+
+	// TODO do we need these or are they just cruft left over from the CLI plugin example
+	resultingContext       *api.Context
+	userSpecifiedCluster   string
+	userSpecifiedContext   string
+	userSpecifiedAuthInfo  string
+	userSpecifiedNamespace string
+	rawConfig              api.Config
+}
+
+func runBuild(streams genericclioptions.IOStreams, in buildOptions) error {
 	if in.squash {
 		return errors.Errorf("squash currently not implemented")
 	}
@@ -93,17 +124,18 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 		Inputs: build.Inputs{
 			ContextPath:    in.contextPath,
 			DockerfilePath: in.dockerfileName,
-			InStream:       os.Stdin,
+			InStream:       streams.In,
 		},
-		Tags:        in.tags,
-		Labels:      listToMap(in.labels, false),
-		BuildArgs:   listToMap(in.buildArgs, true),
-		Pull:        pull,
-		NoCache:     noCache,
-		Target:      in.target,
-		ImageIDFile: in.imageIDFile,
-		ExtraHosts:  in.extraHosts,
-		NetworkMode: in.networkMode,
+		Tags:          in.tags,
+		Labels:        listToMap(in.labels, false),
+		BuildArgs:     listToMap(in.buildArgs, true),
+		Pull:          pull,
+		NoCache:       noCache,
+		Target:        in.target,
+		ImageIDFile:   in.imageIDFile,
+		ExtraHosts:    in.extraHosts,
+		NetworkMode:   in.networkMode,
+		FrontendImage: in.frontend,
 	}
 
 	platforms, err := platformutil.Parse(in.platforms)
@@ -111,8 +143,6 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 		return err
 	}
 	opts.Platforms = platforms
-
-	opts.Session = append(opts.Session, authprovider.NewDockerAuthProvider(os.Stderr))
 
 	secrets, err := build.ParseSecretSpecs(in.secrets)
 	if err != nil {
@@ -132,6 +162,7 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 	}
 	if in.exportPush {
 		if in.exportLoad {
+			// not reached
 			return errors.Errorf("push and load may not be set together at the moment")
 		}
 		if len(outputs) == 0 {
@@ -153,11 +184,12 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 	if in.exportLoad {
 		if len(outputs) == 0 {
 			outputs = []client.ExportEntry{{
-				Type:  "docker",
+				Type:  "runtime", // Will be translated to the applicable runtime later before solving
 				Attrs: map[string]string{},
 			}}
 		} else {
 			switch outputs[0].Type {
+			case "containerd":
 			case "docker":
 			default:
 				return errors.Errorf("load and %q output can't be used together", outputs[0].Type)
@@ -166,6 +198,9 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 	}
 
 	opts.Exports = outputs
+
+	// TODO - figure out if we're multi-node, and should wire up replication of the
+	//        image across all the builders
 
 	cacheImports, err := build.ParseCacheEntry(in.cacheFrom)
 	if err != nil {
@@ -191,42 +226,87 @@ func runBuild(dockerCli command.Cli, in buildOptions) error {
 		contextPathHash = in.contextPath
 	}
 
-	return buildTargets(ctx, dockerCli, map[string]build.Options{"default": opts}, in.progress, contextPathHash, in.builder)
+	return buildTargets(ctx, in.KubeClientConfig, streams, map[string]build.Options{"default": opts}, in.progress, contextPathHash, in.registrySecretName, in.builder)
 }
 
-func buildTargets(ctx context.Context, dockerCli command.Cli, opts map[string]build.Options, progressMode, contextPathHash, instance string) error {
-	dis, err := getInstanceOrDefault(ctx, dockerCli, instance, contextPathHash)
+func buildTargets(ctx context.Context, kubeClientConfig clientcmd.ClientConfig, streams genericclioptions.IOStreams, opts map[string]build.Options, progressMode, contextPathHash, registrySecretName, instance string) error {
+	driverName := instance
+	if driverName == "" {
+		driverName = "buildx_buildkit_kubernetes"
+	}
+	d, err := driver.GetDriver(ctx, driverName, nil, kubeClientConfig, []string{} /* TODO what BuildkitFlags are these? */, "" /* unused config file */, map[string]string{} /* DriverOpts unused */, contextPathHash)
 	if err != nil {
 		return err
+	}
+	dis := []build.DriverInfo{
+		{
+			Name:   driverName,
+			Driver: d,
+		},
 	}
 
 	ctx2, cancel := context.WithCancel(context.TODO())
 	defer cancel()
+
 	pw := progress.NewPrinter(ctx2, os.Stderr, progressMode)
 
-	_, err = build.Build(ctx, dis, opts, dockerAPI(dockerCli), dockerCli.ConfigFile(), pw)
+	_, err = build.Build(ctx, dis, opts, kubeClientConfig, registrySecretName, pw)
 	return err
 }
 
-func buildCmd(dockerCli command.Cli, rootOpts *rootOptions) *cobra.Command {
-	var options buildOptions
+func buildCmd(streams genericclioptions.IOStreams, rootOpts *rootOptions) *cobra.Command {
+	options := buildOptions{
+		commonKubeOptions: commonKubeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+			IOStreams:   streams,
+		},
+	}
 
 	cmd := &cobra.Command{
 		Use:     "build [OPTIONS] PATH | URL | -",
 		Aliases: []string{"b"},
 		Short:   "Start a build",
-		Args:    cli.ExactArgs(1),
+		Long: `Start a build
+
+Alias:
+  'kubectl build ...'
+  'kubectl buildkit build ...'
+
+Hints:
+  If --push or --output are not specified, and the builder(s) are not running
+  in "rootless" mode, built images will be saved in the builder(s) runtime(s)
+
+  To push or pull private images, create a k8s image pull secret with
+  the same name as your builder (default "buildkit") or specify alternate
+  name with '--registry-secret NAME'.
+
+  If no builder already exists on your kubernetes cluster, a builder will be
+  created automatically with sensible defaults based on your environment.
+
+  For more control on builder settings see 'kubectl buildkit create --help'
+
+`,
+		Args: ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options.contextPath = args[0]
 			options.builder = rootOpts.builder
-			return runBuild(dockerCli, options)
+			if len(options.outputs) == 0 && !options.exportPush {
+				options.exportLoad = true
+			}
+			if err := options.Complete(cmd, args); err != nil {
+				return err
+			}
+			if err := options.Validate(); err != nil {
+				return err
+			}
+			return runBuild(streams, options)
 		},
+		SilenceUsage: true,
 	}
 
 	flags := cmd.Flags()
 
 	flags.BoolVar(&options.exportPush, "push", false, "Shorthand for --output=type=registry")
-	flags.BoolVar(&options.exportLoad, "load", false, "Shorthand for --output=type=docker")
 
 	flags.StringArrayVarP(&options.tags, "tag", "t", []string{}, "Name and optionally a tag in the 'name:tag' format")
 	flags.StringArrayVar(&options.buildArgs, "build-arg", []string{}, "Set build-time variables")
@@ -240,6 +320,9 @@ func buildCmd(dockerCli command.Cli, rootOpts *rootOptions) *cobra.Command {
 	flags.StringVar(&options.target, "target", "", "Set the target build stage to build.")
 
 	flags.StringSliceVar(&options.allow, "allow", []string{}, "Allow extra privileged entitlement, e.g. network.host, security.insecure")
+
+	// TODO this should have a build-time default injected
+	flags.StringVar(&options.frontend, "frontend", "", "Specify an image to parse the Dockerfile and generate the build graph")
 
 	// not implemented
 	flags.BoolVarP(&options.quiet, "quiet", "q", false, "Suppress the build output and print image ID on success")
@@ -300,6 +383,8 @@ func buildCmd(dockerCli command.Cli, rootOpts *rootOptions) *cobra.Command {
 
 	commonBuildFlags(&options.commonOptions, flags)
 
+	options.configFlags.AddFlags(cmd.Flags())
+
 	return cmd
 }
 
@@ -307,6 +392,8 @@ func commonBuildFlags(options *commonOptions, flags *pflag.FlagSet) {
 	options.noCache = flags.Bool("no-cache", false, "Do not use cache when building the image")
 	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output (auto, plain, tty). Use plain to show container output")
 	options.pull = flags.Bool("pull", false, "Always attempt to pull a newer version of the image")
+	flags.StringVar(&options.registrySecretName, "registry-secret", "", "specify registry pull secret for pull/push operations (defaults to builder name)")
+
 }
 
 func listToMap(values []string, defaultEnv bool) map[string]string {
@@ -327,4 +414,79 @@ func listToMap(values []string, defaultEnv bool) map[string]string {
 		}
 	}
 	return result
+}
+
+// Complete sets all information required for updating the current context
+func (o *commonKubeOptions) Complete(cmd *cobra.Command, args []string) error {
+	var err error
+	o.KubeClientConfig = o.configFlags.ToRawKubeConfigLoader()
+	o.rawConfig, err = o.KubeClientConfig.RawConfig()
+	if err != nil {
+		return err
+	}
+
+	o.userSpecifiedNamespace, err = cmd.Flags().GetString("namespace")
+	if err != nil {
+		return err
+	}
+
+	// if no namespace flag value was specified, then there
+	// is no need to generate a resulting context
+	if len(o.userSpecifiedNamespace) == 0 {
+		return nil
+	}
+
+	o.userSpecifiedContext, err = cmd.Flags().GetString("context")
+	if err != nil {
+		return err
+	}
+
+	o.userSpecifiedCluster, err = cmd.Flags().GetString("cluster")
+	if err != nil {
+		return err
+	}
+
+	o.userSpecifiedAuthInfo, err = cmd.Flags().GetString("user")
+	if err != nil {
+		return err
+	}
+
+	currentContext, exists := o.rawConfig.Contexts[o.rawConfig.CurrentContext]
+	if !exists {
+		return errNoContext
+	}
+
+	o.resultingContext = api.NewContext()
+	o.resultingContext.Cluster = currentContext.Cluster
+	o.resultingContext.AuthInfo = currentContext.AuthInfo
+
+	// if a target context is explicitly provided by the user,
+	// use that as our reference for the final, resulting context
+	if len(o.userSpecifiedContext) > 0 {
+		if userCtx, exists := o.rawConfig.Contexts[o.userSpecifiedContext]; exists {
+			o.resultingContext = userCtx.DeepCopy()
+		}
+	}
+
+	// override context info with user provided values
+	o.resultingContext.Namespace = o.userSpecifiedNamespace
+
+	if len(o.userSpecifiedCluster) > 0 {
+		o.resultingContext.Cluster = o.userSpecifiedCluster
+	}
+	if len(o.userSpecifiedAuthInfo) > 0 {
+		o.resultingContext.AuthInfo = o.userSpecifiedAuthInfo
+	}
+
+	return nil
+}
+
+// Validate ensures that all required arguments and flag values are provided
+func (o *commonKubeOptions) Validate() error {
+	if len(o.rawConfig.CurrentContext) == 0 {
+		return errNoContext
+	}
+
+	// TODO - other validations for the build parameters (catch pebkacs here)
+	return nil
 }

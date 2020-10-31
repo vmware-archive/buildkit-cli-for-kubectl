@@ -10,7 +10,7 @@ import (
 	"github.com/opencontainers/go-digest"
 )
 
-func FromReader(w Writer, name string, rc io.ReadCloser) {
+func FromReader(w Writer, name string, rc io.Reader) {
 	status := w.Status()
 	dgst := digest.FromBytes([]byte(identity.NewID()))
 	tm := time.Now()

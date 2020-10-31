@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package build
 
 import (
@@ -6,18 +8,23 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
 
+	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/platforms"
-	"github.com/docker/buildx/driver"
-	"github.com/docker/buildx/util/imagetools"
-	"github.com/docker/buildx/util/progress"
-	clitypes "github.com/docker/cli/cli/config/types"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	"google.golang.org/grpc"
+	"k8s.io/client-go/tools/clientcmd"
+
 	"github.com/docker/distribution/reference"
 	dockerclient "github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/urlutil"
@@ -28,7 +35,6 @@ import (
 	"github.com/opencontainers/go-digest"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -58,6 +64,7 @@ type Options struct {
 
 	Allow []entitlements.Entitlement
 	// DockerTarget
+	FrontendImage string
 }
 
 type Inputs struct {
@@ -71,14 +78,6 @@ type DriverInfo struct {
 	Name     string
 	Platform []specs.Platform
 	Err      error
-}
-
-type Auth interface {
-	GetAuthConfig(registryHostname string) (clitypes.AuthConfig, error)
-}
-
-type DockerAPI interface {
-	DockerAPI(name string) (dockerclient.APIClient, error)
 }
 
 func filterAvailableDrivers(drivers []DriverInfo) ([]DriverInfo, error) {
@@ -127,19 +126,19 @@ func allIndexes(l int) []int {
 	return out
 }
 
-func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw progress.Writer) ([]*client.Client, error) {
-	clients := make([]*client.Client, len(drivers))
-
+func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw progress.Writer) (map[string]map[string]*client.Client, error) {
+	clients := map[string]map[string]*client.Client{} // [driverName][chosenNodeName]
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, i := range idxs {
+		clients[drivers[i].Name] = map[string]*client.Client{}
 		func(i int) {
 			eg.Go(func() error {
-				c, err := driver.Boot(ctx, drivers[i].Driver, pw)
+				c, chosenNodeName, err := driver.Boot(ctx, drivers[i].Driver, pw)
 				if err != nil {
 					return err
 				}
-				clients[i] = c
+				clients[drivers[i].Name][chosenNodeName] = c
 				return nil
 			})
 		}(i)
@@ -172,8 +171,7 @@ func splitToDriverPairs(availablePlatforms map[string]int, opt map[string]Option
 	return m
 }
 
-func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Options, pw progress.Writer) (map[string][]driverPair, []*client.Client, error) {
-
+func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Options, pw progress.Writer) (map[string][]driverPair, map[string]map[string]*client.Client, error) {
 	availablePlatforms := map[string]int{}
 	for i, d := range drivers {
 		for _, p := range d.Platform {
@@ -225,20 +223,24 @@ func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Op
 	eg, ctx := errgroup.WithContext(ctx)
 	workers := make([][]*client.WorkerInfo, len(clients))
 
-	for i, c := range clients {
-		if c == nil {
-			continue
+	i := 0
+	for driverName := range clients {
+		for nodeName, c := range clients[driverName] {
+			if c == nil {
+				continue
+			}
+			func(nodeName string, i int) {
+				eg.Go(func() error {
+					ww, err := clients[driverName][nodeName].ListWorkers(ctx)
+					if err != nil {
+						return errors.Wrap(err, "listing workers")
+					}
+					workers[i] = ww
+					return nil
+				})
+			}(nodeName, i)
+			i++
 		}
-		func(i int) {
-			eg.Go(func() error {
-				ww, err := clients[i].ListWorkers(ctx)
-				if err != nil {
-					return errors.Wrap(err, "listing workers")
-				}
-				workers[i] = ww
-				return nil
-			})
-		}(i)
 	}
 
 	if err := eg.Wait(); err != nil {
@@ -278,14 +280,8 @@ func toRepoOnly(in string) (string, error) {
 	return strings.Join(out, ","), nil
 }
 
-func isDefaultMobyDriver(d driver.Driver) bool {
-	_, ok := d.(interface {
-		IsDefaultMobyDriver()
-	})
-	return ok
-}
-
-func toSolveOpt(d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCallback) (solveOpt *client.SolveOpt, release func(), err error) {
+// TODO - this could use some optimization...
+func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCallback) (solveOpt *client.SolveOpt, release func(), err error) {
 	defers := make([]func(), 0, 2)
 	releaseF := func() {
 		for _, f := range defers {
@@ -334,26 +330,44 @@ func toSolveOpt(d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCal
 		AllowedEntitlements: opt.Allow,
 	}
 
+	if opt.FrontendImage != "" {
+		so.Frontend = "gateway.v0"
+		so.FrontendAttrs["source"] = opt.FrontendImage
+	}
+
 	if multiDriver {
 		// force creation of manifest list
 		so.FrontendAttrs["multi-platform"] = "true"
 	}
 
-	_, isDefaultMobyDriver := d.(interface {
-		IsDefaultMobyDriver()
-	})
-
 	switch len(opt.Exports) {
 	case 1:
 		// valid
 	case 0:
-		if isDefaultMobyDriver {
-			// backwards compat for docker driver only:
-			// this ensures the build results in a docker image.
-			opt.Exports = []client.ExportEntry{{Type: "image", Attrs: map[string]string{}}}
-		}
+		// Shouln't happen - higher level constructs should create 1+ exports
+		return nil, nil, errors.Errorf("zero outputs currently unsupported")
+		// TODO - alternative would be
+		// opt.Exports = []client.ExportEntry{{Type: "image", Attrs: map[string]string{}}}
 	default:
 		return nil, nil, errors.Errorf("multiple outputs currently unsupported")
+	}
+
+	// Update any generic "runtime" exports to be runtime specific now:
+	driverFeatures := d.Features()
+	for i, e := range opt.Exports {
+		switch e.Type {
+		case "runtime":
+			// TODO - this is a bit messy - can we just leverage "image" Type and "do the right thing" instead of
+			// having this alternate "runtime" type that's ~inconsistent?
+			if driverFeatures[driver.ContainerdExporter] {
+				opt.Exports[i].Type = "image"
+			} else if driverFeatures[driver.DockerExporter] {
+				opt.Exports[i].Type = "docker"
+			} else {
+				// TODO should we allow building without load or push?
+				return nil, nil, errors.Wrap(err, "unable to determine runtime, please specify --output=type=[docker || containerd] or --push")
+			}
+		}
 	}
 
 	// fill in image exporter names from tags
@@ -384,29 +398,87 @@ func toSolveOpt(d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCal
 
 	// set up exporters
 	for i, e := range opt.Exports {
+		pushing := false
+		if p, ok := e.Attrs["push"]; ok {
+			pushing, _ = strconv.ParseBool(p)
+		}
 		if (e.Type == "local" || e.Type == "tar") && opt.ImageIDFile != "" {
 			return nil, nil, errors.Errorf("local and tar exporters are incompatible with image ID file")
 		}
-		if e.Type == "oci" && !d.Features()[driver.OCIExporter] {
+
+		// TODO - do more research on what this really means and if it's wired up correctly
+		if e.Type == "oci" && !driverFeatures[driver.OCIExporter] {
 			return nil, nil, notSupported(d, driver.OCIExporter)
 		}
 		if e.Type == "docker" {
-			if e.Output == nil {
-				if isDefaultMobyDriver {
-					e.Type = "image"
-				} else {
-					w, cancel, err := dl(e.Attrs["context"])
-					if err != nil {
-						return nil, nil, err
-					}
-					defers = append(defers, cancel)
-					opt.Exports[i].Output = wrapWriteCloser(w)
-				}
-			} else if !d.Features()[driver.DockerExporter] {
+			if !driverFeatures[driver.DockerExporter] {
 				return nil, nil, notSupported(d, driver.DockerExporter)
 			}
+			// If the runtime is docker and we're not in
+			// rootless mode, then we will have mounted
+			// the docker.sock inside the buildkit pods, and
+			// can use the exec trick with
+			//   buildctl --addr unix://run/docker.sock
+			// to proxy to the API endpoint and perform an image load
+			// This isn't as efficient as tagging/exposing the images
+			// directly within containerd, but will suffice during
+			// the transition period while many people still run Docker
+			// as their container runtime for kubernetes
+
+			// If an Output (file) is already specified, let it pass through
+			if e.Output == nil {
+				w, cancel, err := dl("")
+				if err != nil {
+					return nil, nil, err
+				}
+				defers = append(defers, cancel)
+				opt.Exports[i].Output = wrapWriteCloser(w)
+			}
 		}
-		if e.Type == "image" && isDefaultMobyDriver {
+		if e.Type == "containerd" { // TODO - should this just be dropped in favor of "image"?
+
+			// TODO should this just be wired up as "image" instead?
+			return nil, nil, notSupported(d, driver.ContainerdExporter)
+			// TODO implement this scenario
+		}
+		if e.Type == "image" && !pushing {
+			if !driverFeatures[driver.ContainerdExporter] {
+				// TODO - this could use a little refinement - if the user specifies `--output=image` it would be nice
+				// to auto-wire this to handle both runtimes (docker and containerd)
+				return nil, nil, notSupported(d, driver.ContainerdExporter)
+			}
+			// TODO - is there a better layer to optimize this part of the flow at?
+			multiNode := false
+			builders, err := d.List(ctx) // TODO - we're doing this multiple times - clean this up by passing in some more context to toSolveOpt
+			if err != nil {
+				return nil, nil, err
+			}
+			if len(builders) > 1 { // TODO - this is messy and ~wrong - should just be getting nodes for a given builder here
+				multiNode = true
+			} else if len(builders) == 1 {
+				if len(builders[0].Nodes) > 1 {
+					multiNode = true
+				}
+			}
+
+			// TODO - figure out how to wire this up so the exporter output type is oci instead of image
+
+			// If an Output (file) is already specified, let it pass through
+			if e.Output == nil && multiNode {
+				// TODO - Explore if there's a model to avoid having to transfer to the builder node
+				opt.Exports[i].Type = "oci" // TODO - this most likely means the image isn't saved locally too
+				w, cancel, err := dl("")
+				if err != nil {
+					return nil, nil, err
+				}
+				defers = append(defers, cancel)
+				opt.Exports[i].Output = wrapWriteCloser(w)
+			}
+		}
+
+		// TODO - image + runtime==docker, use the same proxy as above
+		/* Nuke this once everything's refactored
+		if e.Type == "image" && isDefaultMobyDriver { // TODO kube driver use-case coverage here...
 			opt.Exports[i].Type = "moby"
 			if e.Attrs["push"] != "" {
 				if ok, _ := strconv.ParseBool(e.Attrs["push"]); ok {
@@ -414,6 +486,9 @@ func toSolveOpt(d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCal
 				}
 			}
 		}
+		*/
+
+		// TODO If we're multi-node and "image" is specified, should we replicate it on all nodes?
 	}
 
 	so.Exports = opt.Exports
@@ -473,7 +548,7 @@ func toSolveOpt(d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCal
 	return &so, releaseF, nil
 }
 
-func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, docker DockerAPI, auth Auth, pw progress.Writer) (resp map[string]*client.SolveResponse, err error) {
+func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, kubeClientConfig clientcmd.ClientConfig, registrySecretName string, pw progress.Writer) (resp map[string]*client.SolveResponse, err error) {
 	if len(drivers) == 0 {
 		return nil, errors.Errorf("driver required for build")
 	}
@@ -482,24 +557,6 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, do
 	if err != nil {
 		return nil, errors.Wrapf(err, "no valid drivers found")
 	}
-
-	var noMobyDriver driver.Driver
-	for _, d := range drivers {
-		if !isDefaultMobyDriver(d.Driver) {
-			noMobyDriver = d.Driver
-			break
-		}
-	}
-
-	if noMobyDriver != nil {
-		for _, opt := range opt {
-			if len(opt.Exports) == 0 {
-				logrus.Warnf("No output specified for %s driver. Build result will only remain in the build cache. To push result image into registry use --push or to load image into docker use --load", noMobyDriver.Factory().Name())
-				break
-			}
-		}
-	}
-
 	m, clients, err := resolveDrivers(ctx, drivers, opt, pw)
 	if err != nil {
 		close(pw.Status())
@@ -516,16 +573,38 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, do
 		}
 	}()
 
+	var auth imagetools.Auth
+
 	mw := progress.NewMultiWriter(pw)
 	eg, ctx := errgroup.WithContext(ctx)
-
 	for k, opt := range opt {
 		multiDriver := len(m[k]) > 1
 		for i, dp := range m[k] {
 			d := drivers[dp.driverIndex].Driver
 			opt.Platforms = dp.platforms
-			so, release, err := toSolveOpt(d, multiDriver, opt, func(name string) (io.WriteCloser, func(), error) {
-				return newDockerLoader(ctx, docker, name, mw)
+
+			// TODO - this is a little messy - some recactoring of this routine would be worthwhile
+			var chosenNodeName string
+			for name := range clients[d.Factory().Name()] {
+				chosenNodeName = name // TODO - this doesn't actually seem to be working!!!
+				break
+			}
+			// TODO - this is also messy and wont work for multi-driver scenarios (no that it's possible yet...)
+			if auth == nil {
+				auth = d.GetAuthWrapper(registrySecretName)
+				opt.Session = append(opt.Session, d.GetAuthProvider(registrySecretName, os.Stderr))
+			}
+			so, release, err := toSolveOpt(ctx, d, multiDriver, opt, func(arg string) (io.WriteCloser, func(), error) {
+				// Set up loader based on first found type (only 1 supported)
+				for _, entry := range opt.Exports {
+					if entry.Type == "docker" {
+						return newDockerLoader(ctx, d, kubeClientConfig, chosenNodeName, mw)
+					} else if entry.Type == "oci" {
+						return newContainerdLoader(ctx, d, kubeClientConfig, chosenNodeName, mw)
+					}
+				}
+				// TODO - Push scenario?  (or is this a "not reached" scenario now?)
+				return nil, nil, fmt.Errorf("raw push scenario not yet supported")
 			})
 			if err != nil {
 				return nil, err
@@ -599,7 +678,6 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, do
 							if opt.ImageIDFile != "" {
 								return ioutil.WriteFile(opt.ImageIDFile, []byte(desc.Digest), 0644)
 							}
-
 							itpush := imagetools.New(imagetools.Opt{
 								Auth: auth,
 							})
@@ -659,7 +737,12 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, do
 				func(i int, dp driverPair, so client.SolveOpt) {
 					pw := mw.WithPrefix(k, multiTarget)
 
-					c := clients[dp.driverIndex]
+					// TODO this is a little mess - could use some refactoring
+					var c *client.Client
+					for _, client := range clients[drivers[dp.driverIndex].Name] {
+						c = client
+						break
+					}
 
 					var statusCh chan *client.SolveStatus
 					if pw != nil {
@@ -675,6 +758,12 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, do
 						defer wg.Done()
 						rr, err := c.Solve(ctx, nil, so, statusCh)
 						if err != nil {
+							// Try to give a slightly more helpful error message if the use
+							// hasn't wired up a kubernetes secret for push/pull properly
+							if strings.Contains(strings.ToLower(err.Error()), "401 unauthorized") {
+								msg := drivers[dp.driverIndex].Driver.GetAuthHintMessage()
+								return errors.Wrap(err, msg)
+							}
 							return err
 						}
 						res[i] = rr
@@ -805,56 +894,237 @@ func LoadInputs(inp Inputs, target *client.SolveOpt) (func(), error) {
 }
 
 func notSupported(d driver.Driver, f driver.Feature) error {
-	return errors.Errorf("%s feature is currently not supported for %s driver. Please switch to a different driver (eg. \"docker buildx create --use\")", f, d.Factory().Name())
+	return errors.Errorf("%s feature is currently not supported for %s driver. Please switch to a different driver (eg. \"kubectl buildkit create --use\")", f, d.Factory().Name())
 }
 
 type dockerLoadCallback func(name string) (io.WriteCloser, func(), error)
 
-func newDockerLoader(ctx context.Context, d DockerAPI, name string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
-	c, err := d.DockerAPI(name)
+func newDockerLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, chosenNodeName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
+	nodeNames := []string{}
+	// TODO this isn't quite right - we need a better "list only pods from one instance" func
+	builders, err := d.List(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
+	for _, builder := range builders {
+		for _, node := range builder.Nodes {
+			nodeNames = append(nodeNames, node.Name)
+		}
+	}
+	// TODO revamp this flow to return a list of pods
 
-	pr, pw := io.Pipe()
-	started := make(chan struct{})
+	readers := make([]*io.PipeReader, len(nodeNames))
+	writers := make([]io.Writer, len(nodeNames))
+	pws := make([]*io.PipeWriter, len(nodeNames))
+	names := make([]string, len(nodeNames))
+	clients := make([]*dockerclient.Client, len(nodeNames))
+	started := make([]chan struct{}, len(nodeNames))
+	for i := range nodeNames {
+		nodeName := nodeNames[i]
+		tr := &http.Transport{
+			// This is necessary as the Exec "upgrade" of the underlying connection
+			// seems to confuse the Golang Transport idle connection caching mechanism
+			// and multiple pods wind up sharing a connection that "appears" idle.
+			//DisableKeepAlives: true,
+
+			DialContext: func(_ context.Context, _, _ string) (net.Conn, error) {
+				conn, err := d.RuntimeSockProxy(ctx, nodeName)
+				if err != nil {
+					return nil, fmt.Errorf("failed to set up docker runtime proxies through pod %s: %w", nodeName, err)
+				}
+				return conn, nil
+			},
+		}
+
+		c, err := dockerclient.NewClientWithOpts(
+			dockerclient.WithAPIVersionNegotiation(),
+			dockerclient.WithHTTPClient(&http.Client{Transport: tr}),
+			dockerclient.WithHost("http://"+nodeName), // TODO nuke
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to set up docker client via proxy: %w", err)
+		}
+
+		pr, pw := io.Pipe()
+		readers[i] = pr
+		writers[i] = pw
+		pws[i] = pw
+		clients[i] = c
+		names[i] = nodeName
+		started[i] = make(chan struct{})
+	}
+
 	w := &waitingWriter{
-		PipeWriter: pw,
-		f: func() {
-			resp, err := c.ImageLoad(ctx, pr, false)
+		Writer: io.MultiWriter(writers...),
+		pws:    pws,
+		names:  names,
+		f: func(i int) {
+			c := clients[i]
+			resp, err := c.ImageLoad(ctx, readers[i], false)
 			if err != nil {
-				pr.CloseWithError(err)
+				_ = readers[i].CloseWithError(err)
+				close(started[i])
 				return
 			}
+
 			prog := mw.WithPrefix("", false)
-			close(started)
-			progress.FromReader(prog, "importing to docker", resp.Body)
+
+			close(started[i])
+
+			progress.FromReader(prog, fmt.Sprintf("loading image to docker runtime via pod %s", names[i]), resp.Body)
+			resp.Body.Close()
 		},
 		started: started,
 	}
+
 	return w, func() {
-		pr.Close()
+		for _, pr := range readers {
+			pr.Close()
+		}
 	}, nil
 }
 
 type waitingWriter struct {
-	*io.PipeWriter
-	f       func()
-	once    sync.Once
-	mu      sync.Mutex
-	err     error
-	started chan struct{}
+	io.Writer
+	pws   []*io.PipeWriter
+	names []string
+	f     func(i int)
+	once  sync.Once
+	// mu      sync.Mutex
+	// err     error
+	started []chan struct{}
 }
 
 func (w *waitingWriter) Write(dt []byte) (int, error) {
 	w.once.Do(func() {
-		go w.f()
+		for i := range w.pws {
+			go w.f(i)
+		}
 	})
-	return w.PipeWriter.Write(dt)
+
+	return w.Writer.Write(dt)
 }
 
 func (w *waitingWriter) Close() error {
-	err := w.PipeWriter.Close()
-	<-w.started
+	var err error
+	for _, pw := range w.pws {
+		err2 := pw.Close()
+		if err2 != nil {
+			err = err2
+		}
+	}
+	for i := range w.pws {
+		<-w.started[i]
+	}
 	return err
+}
+
+func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, chosenNodeName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
+	nodeNames := []string{}
+	// TODO this isn't quite right - we need a better "list only pods from one instance" func
+	// TODO revamp this flow to return a list of pods
+
+	builders, err := d.List(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, builder := range builders {
+		for _, node := range builder.Nodes {
+			// For containerd, we never have to load on the node where it was built
+			// TODO - this doesn't actually work yet, but when we switch the output.Type to "oci" we need to load it everywhere anyway
+			if node.Name == chosenNodeName {
+				continue
+			}
+			nodeNames = append(nodeNames, node.Name)
+		}
+	}
+
+	readers := make([]*io.PipeReader, len(nodeNames))
+	writers := make([]io.Writer, len(nodeNames))
+	pws := make([]*io.PipeWriter, len(nodeNames))
+	names := make([]string, len(nodeNames))
+	clients := make([]*containerd.Client, len(nodeNames))
+	started := make([]chan struct{}, len(nodeNames))
+	for i := range nodeNames {
+		nodeName := nodeNames[i]
+		c, err := containerd.New(nodeName,
+
+			// TODO - plumb the containerd namespace through so this isn't hard-coded
+			containerd.WithDefaultNamespace("k8s.io"),
+			containerd.WithDialOpts([]grpc.DialOption{
+				grpc.WithContextDialer(
+					func(ctx context.Context, _ string) (net.Conn, error) {
+						conn, err := d.RuntimeSockProxy(ctx, nodeName)
+						if err != nil {
+							return nil, fmt.Errorf("failed to set up containerd runtime proxies through pod %s: %w", nodeName, err)
+						}
+						return conn, nil
+					},
+				),
+				grpc.WithInsecure(), // Nested connection on an existing secure transport
+			}),
+		)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to set up docker client via proxy: %w", err)
+		}
+
+		pr, pw := io.Pipe()
+		readers[i] = pr
+		writers[i] = pw
+		pws[i] = pw
+		clients[i] = c
+		names[i] = nodeName
+		started[i] = make(chan struct{})
+	}
+
+	w := &waitingWriter{
+		Writer: io.MultiWriter(writers...),
+		pws:    pws,
+		names:  names,
+		f: func(i int) {
+			//prog := mw.WithPrefix(names[i], false)
+
+			c := clients[i]
+
+			// TODO - is there some way to wire up fine-grain progress reporting stream here?
+			// Adding calls to progress.Write(mw, "importing image", func() error { return nil }) seem to cause hangs...
+			imgs, err := c.Import(ctx, readers[i],
+
+				// TODO - might need to pass through the tagged name with the tag part stripped off
+				//containerd.WithImageRefTranslator(archive.FilterRefPrefix(prefix),
+
+				// TODO - might need this too..
+				//containerd.WithIndexName(tag),
+
+				// TODO - is this necessary or implicit?  (try without after it's working...)
+				containerd.WithAllPlatforms(false),
+			)
+			if err != nil {
+				_ = readers[i].CloseWithError(err)
+				close(started[i])
+				return
+			}
+
+			for _, img := range imgs {
+				image := containerd.NewImage(c, img)
+
+				// TODO: Show unpack status
+				//progress.Write(prog, fmt.Sprintf("unpacking %s (%s)", img.Name, img.Target.Digest), func() error { return nil })
+				err = image.Unpack(ctx, "") // Empty snapshotter is default
+				if err != nil {
+					_ = readers[i].CloseWithError(err)
+					close(started[i])
+					return
+				}
+			}
+			close(started[i])
+		},
+		started: started,
+	}
+
+	return w, func() {
+		for _, pr := range readers {
+			pr.Close()
+		}
+	}, nil
 }

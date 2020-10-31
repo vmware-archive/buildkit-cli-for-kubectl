@@ -1,0 +1,33 @@
+issues:
+  max-per-linter: 0
+  max-same-issues: 0
+
+run:
+  deadline: 5m
+
+linters:
+  disable-all: true
+  enable:
+    - deadcode
+    - errcheck
+    # - gofmt
+    - goimports
+    - golint
+    - gosimple
+    - govet
+    - ineffassign
+    - interfacer
+    - nakedret
+    - misspell
+    - staticcheck
+    # - structcheck
+    - typecheck
+    - unused
+    - unconvert
+    - varcheck
+    - vet
+    - vetshadow
+
+linters-settings:
+  errcheck:
+    ignore: github.com/spf13/pflag:MarkHidden

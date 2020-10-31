@@ -1,10 +1,12 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package store
 
 import (
 	"testing"
 
-	"github.com/docker/buildx/util/platformutil"
 	"github.com/stretchr/testify/require"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/platformutil"
 )
 
 func TestNodeGroupUpdate(t *testing.T) {

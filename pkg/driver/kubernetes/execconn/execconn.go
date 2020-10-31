@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package execconn
 
 import (
@@ -29,7 +31,8 @@ func ExecConn(restClient rest.Interface, restConfig *rest.Config, namespace, pod
 			Stderr:    true,
 			TTY:       false,
 		}, scheme.ParameterCodec)
-	exec, err := remotecommand.NewSPDYExecutor(restConfig, "POST", req.URL())
+	u := req.URL()
+	exec, err := remotecommand.NewSPDYExecutor(restConfig, "POST", u)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +42,7 @@ func ExecConn(restClient rest.Interface, restConfig *rest.Config, namespace, pod
 		stdin:      stdinW,
 		stdout:     stdoutR,
 		localAddr:  dummyAddr{network: "dummy", s: "dummy-0"},
-		remoteAddr: dummyAddr{network: "dummy", s: "dummy-1"},
+		remoteAddr: dummyAddr{network: pod, s: pod},
 	}
 	go func() {
 		serr := exec.Stream(remotecommand.StreamOptions{

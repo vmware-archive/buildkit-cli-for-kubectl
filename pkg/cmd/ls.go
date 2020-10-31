@@ -1,105 +1,47 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package commands
 
 import (
-	"context"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
-	"time"
 
-	"github.com/docker/buildx/store"
-	"github.com/docker/buildx/util/platformutil"
-	"github.com/docker/cli/cli"
-	"github.com/docker/cli/cli/command"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/spf13/cobra"
-	"golang.org/x/sync/errgroup"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/platformutil"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
 )
 
 type lsOptions struct {
+	commonKubeOptions
 }
 
-func runLs(dockerCli command.Cli, in lsOptions) error {
+func runLs(streams genericclioptions.IOStreams, in lsOptions) error {
 	ctx := appcontext.Context()
 
-	txn, release, err := getStore(dockerCli)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	ctx, cancel := context.WithTimeout(ctx, 7*time.Second)
-	defer cancel()
-
-	ll, err := txn.List()
-	if err != nil {
-		return err
-	}
-
-	builders := make([]*nginfo, len(ll))
-	for i, ng := range ll {
-		builders[i] = &nginfo{ng: ng}
-	}
-
-	list, err := dockerCli.ContextStore().List()
-	if err != nil {
-		return err
-	}
-	ctxbuilders := make([]*nginfo, len(list))
-	for i, l := range list {
-		ctxbuilders[i] = &nginfo{ng: &store.NodeGroup{
-			Name: l.Name,
-			Nodes: []store.Node{{
-				Name:     l.Name,
-				Endpoint: l.Name,
-			}},
-		}}
-	}
-
-	builders = append(builders, ctxbuilders...)
-
-	eg, _ := errgroup.WithContext(ctx)
-
-	for _, b := range builders {
-		func(b *nginfo) {
-			eg.Go(func() error {
-				err = loadNodeGroupData(ctx, dockerCli, b)
-				if b.err == nil && err != nil {
-					b.err = err
-				}
-				return nil
-			})
-		}(b)
-	}
-
-	if err := eg.Wait(); err != nil {
-		return err
-	}
-
-	currentName := "default"
-	current, err := getCurrentInstance(txn, dockerCli)
-	if err != nil {
-		return err
-	}
-	if current != nil {
-		currentName = current.Name
-		if current.Name == "default" {
-			currentName = current.Nodes[0].Endpoint
+	var builders []driver.Builder
+	for name, factory := range driver.GetFactories() {
+		d, err := driver.GetDriver(ctx, name, factory, in.KubeClientConfig, nil, "", nil, "")
+		if err != nil {
+			return err
 		}
+		b, err := d.List(ctx)
+		if err != nil {
+			return err
+		}
+		builders = append(builders, b...)
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-	fmt.Fprintf(w, "NAME/NODE\tDRIVER/ENDPOINT\tSTATUS\tPLATFORMS\n")
+	fmt.Fprintf(w, "NAME\tNODE\tDRIVER\tSTATUS\tPLATFORMS\n")
 
-	currentSet := false
 	for _, b := range builders {
-		if !currentSet && b.ng.Name == currentName {
-			b.ng.Name += " *"
-			currentSet = true
+		for _, n := range b.Nodes {
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", b.Name, n.Name, b.Driver, n.Status, strings.Join(platformutil.FormatInGroups(n.Platforms), ", "))
 		}
-		printngi(w, b)
 	}
 
 	w.Flush()
@@ -107,45 +49,31 @@ func runLs(dockerCli command.Cli, in lsOptions) error {
 	return nil
 }
 
-func printngi(w io.Writer, ngi *nginfo) {
-	var err string
-	if ngi.err != nil {
-		err = ngi.err.Error()
+func lsCmd(streams genericclioptions.IOStreams) *cobra.Command {
+	options := lsOptions{
+		commonKubeOptions: commonKubeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+			IOStreams:   streams,
+		},
 	}
-	fmt.Fprintf(w, "%s\t%s\t%s\t\n", ngi.ng.Name, ngi.ng.Driver, err)
-	if ngi.err == nil {
-		for idx, n := range ngi.ng.Nodes {
-			d := ngi.drivers[idx]
-			var err string
-			if d.err != nil {
-				err = d.err.Error()
-			} else if d.di.Err != nil {
-				err = d.di.Err.Error()
-			}
-			var status string
-			if d.info != nil {
-				status = d.info.Status.String()
-			}
-			if err != "" {
-				fmt.Fprintf(w, "  %s\t%s\t%s\n", n.Name, n.Endpoint, err)
-			} else {
-				fmt.Fprintf(w, "  %s\t%s\t%s\t%s\n", n.Name, n.Endpoint, status, strings.Join(platformutil.FormatInGroups(n.Platforms, d.platforms), ", "))
-			}
-		}
-	}
-}
-
-func lsCmd(dockerCli command.Cli) *cobra.Command {
-	var options lsOptions
 
 	cmd := &cobra.Command{
 		Use:   "ls",
 		Short: "List builder instances",
-		Args:  cli.ExactArgs(0),
+		Args:  ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runLs(dockerCli, options)
+			if err := options.Complete(cmd, args); err != nil {
+				return err
+			}
+			if err := options.Validate(); err != nil {
+				return err
+			}
+
+			return runLs(streams, options)
 		},
+		SilenceUsage: true,
 	}
+	options.configFlags.AddFlags(cmd.Flags())
 
 	return cmd
 }

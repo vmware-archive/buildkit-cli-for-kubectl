@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package build
 
 import (
@@ -12,6 +14,8 @@ import (
 )
 
 func ParseOutputs(inp []string) ([]client.ExportEntry, error) {
+	//  TODO - experiment with this and see what else needs to be wired up for outputs to work
+
 	var outs []client.ExportEntry
 	if len(inp) == 0 {
 		return nil, nil

@@ -179,7 +179,7 @@ func (t *Txn) Current(key string) (*NodeGroup, error) {
 	dt, err = ioutil.ReadFile(filepath.Join(t.s.root, "defaults", h))
 	if err != nil {
 		if os.IsNotExist(err) {
-			t.reset(key)
+			_ = t.reset(key)
 			return nil, nil
 		}
 		return nil, err
@@ -187,7 +187,7 @@ func (t *Txn) Current(key string) (*NodeGroup, error) {
 
 	ng, err := t.NodeGroupByName(string(dt))
 	if err != nil {
-		t.reset(key)
+		_ = t.reset(key)
 	}
 	if err := t.SetCurrent(key, string(dt), false, true); err != nil {
 		return nil, err

@@ -1,3 +1,5 @@
+// Portions Copyright (C) 2020 VMware, Inc.
+// SPDX-License-Identifier: Apache-2.0
 package commands
 
 import (
@@ -6,111 +8,50 @@ import (
 	"os"
 	"strings"
 
-	"github.com/docker/buildx/driver"
-	"github.com/docker/buildx/store"
-	"github.com/docker/cli/cli"
-	"github.com/docker/cli/cli/command"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	"k8s.io/cli-runtime/pkg/genericclioptions"
+
 	"github.com/google/shlex"
 	"github.com/moby/buildkit/util/appcontext"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/spf13/cobra"
 )
 
 type createOptions struct {
-	name         string
-	driver       string
-	nodeName     string
-	platform     []string
-	actionAppend bool
-	actionLeave  bool
-	use          bool
-	flags        string
-	configFile   string
-	driverOpts   []string
-	// upgrade      bool // perform upgrade of the driver
+	commonKubeOptions
+
+	name       string
+	driver     string
+	platform   []string
+	flags      string
+	configFile string
+	driverOpts []string
+	progress   string
 }
 
-func runCreate(dockerCli command.Cli, in createOptions, args []string) error {
+func runCreate(streams genericclioptions.IOStreams, in createOptions) error {
 	ctx := appcontext.Context()
 
 	if in.name == "default" {
 		return errors.Errorf("default is a reserved name and cannot be used to identify builder instance")
 	}
 
-	if in.actionLeave {
-		if in.name == "" {
-			return errors.Errorf("leave requires instance name")
-		}
-		if in.nodeName == "" {
-			return errors.Errorf("leave requires node name but --node not set")
-		}
-	}
-
-	if in.actionAppend {
-		if in.name == "" {
-			logrus.Warnf("append used without name, creating a new instance instead")
-		}
-	}
-
-	driverName := in.driver
-	if driverName == "" {
-		f, err := driver.GetDefaultFactory(ctx, dockerCli.Client(), true)
+	var driverFactory driver.Factory
+	var err error
+	if in.driver == "" {
+		driverFactory, err = driver.GetDefaultFactory(ctx, true)
 		if err != nil {
 			return err
 		}
-		if f == nil {
+		if driverFactory == nil {
 			return errors.Errorf("no valid drivers found")
 		}
-		driverName = f.Name()
-	}
-
-	if driver.GetFactory(driverName, true) == nil {
-		return errors.Errorf("failed to find driver %q", in.driver)
-	}
-
-	txn, release, err := getStore(dockerCli)
-	if err != nil {
-		return err
-	}
-	defer release()
-
-	name := in.name
-	if name == "" {
-		name, err = store.GenerateName(txn)
-		if err != nil {
-			return err
+	} else {
+		driverFactory = driver.GetFactory(in.driver, true)
+		if driverFactory == nil {
+			return errors.Errorf("failed to find driver %q", in.driver)
 		}
-	}
-
-	ng, err := txn.NodeGroupByName(name)
-	if err != nil {
-		if os.IsNotExist(errors.Cause(err)) {
-			if in.actionAppend && in.name != "" {
-				logrus.Warnf("failed to find %q for append, creating a new instance instead", in.name)
-			}
-			if in.actionLeave {
-				return errors.Errorf("failed to find instance %q for leave", name)
-			}
-		} else {
-			return err
-		}
-	}
-
-	if ng != nil {
-		if in.nodeName == "" && !in.actionAppend {
-			return errors.Errorf("existing instance for %s but no append mode, specify --node to make changes for existing instances", name)
-		}
-	}
-
-	if ng == nil {
-		ng = &store.NodeGroup{
-			Name: name,
-		}
-	}
-
-	if ng.Driver == "" || in.driver != "" {
-		ng.Driver = driverName
 	}
 
 	var flags []string
@@ -120,87 +61,70 @@ func runCreate(dockerCli command.Cli, in createOptions, args []string) error {
 			return errors.Wrap(err, "failed to parse buildkit flags")
 		}
 	}
-
-	var ep string
-	if in.actionLeave {
-		if err := ng.Leave(in.nodeName); err != nil {
-			return err
-		}
-	} else {
-		if len(args) > 0 {
-			ep, err = validateEndpoint(dockerCli, args[0])
-			if err != nil {
-				return err
-			}
-		} else {
-			if dockerCli.CurrentContext() == "default" && dockerCli.DockerEndpoint().TLSData != nil {
-				return errors.Errorf("could not create a builder instance with TLS data loaded from environment. Please use `docker context create <context-name>` to create a context for current environment and then create a builder instance with `docker buildx create <context-name>`")
-			}
-
-			ep, err = getCurrentEndpoint(dockerCli)
-			if err != nil {
-				return err
-			}
-		}
-		m, err := csvToMap(in.driverOpts)
-		if err != nil {
-			return err
-		}
-		if err := ng.Update(in.nodeName, ep, in.platform, len(args) > 0, in.actionAppend, flags, in.configFile, m); err != nil {
-			return err
-		}
-	}
-
-	if err := txn.Save(ng); err != nil {
+	driverOptsMap, err := csvToMap(in.driverOpts)
+	if err != nil {
 		return err
 	}
-
-	if in.use && ep != "" {
-		current, err := getCurrentEndpoint(dockerCli)
-		if err != nil {
-			return err
-		}
-		if err := txn.SetCurrent(current, ng.Name, false, false); err != nil {
-			return err
-		}
+	d, err := driver.GetDriver(ctx, in.name, driverFactory, in.KubeClientConfig, flags, in.configFile, driverOptsMap, "" /*contextPathHash*/)
+	if err != nil {
+		return err
 	}
-
-	fmt.Printf("%s\n", ng.Name)
+	pw := progress.NewPrinter(ctx, os.Stderr, in.progress)
+	_, _, err = driver.Boot(ctx, d, pw)
+	if err != nil {
+		return err
+	}
+	fmt.Printf("Created %s builder %s\n", driverFactory.Name(), in.name)
 	return nil
 }
 
-func createCmd(dockerCli command.Cli) *cobra.Command {
-	var options createOptions
+func createCmd(streams genericclioptions.IOStreams) *cobra.Command {
+	options := createOptions{
+		commonKubeOptions: commonKubeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+			IOStreams:   streams,
+		},
+	}
 
 	var drivers []string
-	for s := range driver.GetFactories() {
+	var driverUsage []string
+	for s, f := range driver.GetFactories() {
 		drivers = append(drivers, s)
+		driverUsage = append(driverUsage, f.Usage())
 	}
 
 	cmd := &cobra.Command{
-		Use:   "create [OPTIONS] [CONTEXT|ENDPOINT]",
+		Use:   "create [OPTIONS] [NAME]",
 		Short: "Create a new builder instance",
-		Args:  cli.RequiresMaxArgs(1),
+		Long: `Create a new builder instance
+
+Driver Specific Usage:
+` + strings.Join(driverUsage, "\n"),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runCreate(dockerCli, options, args)
+			if len(args) > 0 {
+				options.name = args[0]
+			}
+			if err := options.Complete(cmd, args); err != nil {
+				return err
+			}
+			if err := options.Validate(); err != nil {
+				return err
+			}
+			return runCreate(streams, options)
 		},
+		SilenceUsage: true,
 	}
 
 	flags := cmd.Flags()
 
-	flags.StringVar(&options.name, "name", "", "Builder instance name")
 	flags.StringVar(&options.driver, "driver", "", fmt.Sprintf("Driver to use (available: %v)", drivers))
-	flags.StringVar(&options.nodeName, "node", "", "Create/modify node with given name")
 	flags.StringVar(&options.flags, "buildkitd-flags", "", "Flags for buildkitd daemon")
 	flags.StringVar(&options.configFile, "config", "", "BuildKit config file")
 	flags.StringArrayVar(&options.platform, "platform", []string{}, "Fixed platforms for current node")
 	flags.StringArrayVar(&options.driverOpts, "driver-opt", []string{}, "Options for the driver")
+	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output (auto, plain, tty). Use plain to show container output")
 
-	flags.BoolVar(&options.actionAppend, "append", false, "Append a node to builder instead of changing it")
-	flags.BoolVar(&options.actionLeave, "leave", false, "Remove a node from builder instead of changing it")
-	flags.BoolVar(&options.use, "use", false, "Set the current builder instance")
-
-	_ = flags
+	options.configFlags.AddFlags(flags)
 
 	return cmd
 }
