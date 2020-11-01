@@ -82,3 +82,8 @@ cover.html: cover-int.out cover-unit.out
 	go tool cover -html=./cover.out -o ./cover.html
 	go tool cover -func cover.out | grep total:
 	open ./cover.html
+
+.PHONY: lint
+lint:
+	golangci-lint run
+
