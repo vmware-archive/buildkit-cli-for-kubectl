@@ -18,7 +18,7 @@ func TestRootlessSuite(t *testing.T) {
 		suite.Run(t, &rootlessSuite{
 			BaseSuite: common.BaseSuite{
 				Name:        "rootless",
-				CreateFlags: []string{"--driver-opt", "rootless=true"},
+				CreateFlags: []string{"--rootless", "true"},
 			},
 		})
 	*/
