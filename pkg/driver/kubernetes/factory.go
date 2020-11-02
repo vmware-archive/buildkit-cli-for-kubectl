@@ -166,13 +166,15 @@ func (d *Driver) initDriverFromConfig() error {
 		case "runtime":
 			switch v {
 			case "auto":
+				d.userSpecifiedRuntime = false
 			case "docker":
+				d.userSpecifiedRuntime = true
 			case "containerd":
+				d.userSpecifiedRuntime = true
 			default:
 				return errors.Errorf("invalid runtime %q", v)
 			}
 			deploymentOpt.ContainerRuntime = v
-			d.userSpecifiedRuntime = true
 		default:
 			return errors.Errorf("invalid driver option %s for driver %s", k, DriverName)
 		}
