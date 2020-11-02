@@ -9,7 +9,6 @@ import (
 	"io/ioutil"
 	"strconv"
 	"strings"
-	"text/tabwriter"
 	"text/template"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
@@ -44,21 +43,6 @@ func (*factory) Usage() string {
 	fmt.Fprintf(&usage, "%s  Builtkitd configuration is stored in a ConfigMap by the same name as the builder\n", prefix)
 	fmt.Fprintf(&usage, "%s  If no '--config' is specified, a default config will be generated\n", prefix)
 	fmt.Fprintf(&usage, "%s  When containerd worker is used, host mounts to support containerd are added\n", prefix)
-
-	fmt.Fprintf(&usage, "%skubernetes driver options:\n", prefix)
-	w := tabwriter.NewWriter(&usage, 0, 0, 1, ' ', 0)
-	fmt.Fprintf(w, "%s  image\tspecify an alternate buildkit image (default %s)\n", prefix, bkimage.DefaultImage)
-	fmt.Fprintf(w, "%s  namespace\tkubernetes namespace to use (defaults to your kubeconfig default)\n", prefix)
-	fmt.Fprintf(w, "%s  runtime\tcontainer runtime used by cluster (defaults to %s)\n", prefix, DefaultContainerRuntime)
-	fmt.Fprintf(w, "%s  containerd-sock\tpath to the containerd.sock on the host\n", prefix)
-	fmt.Fprintf(w, "%s  containerd-namespace\tcontainerd namespace to build images in (defaults to %s)\n", prefix, DefaultContainerdNamespace)
-	fmt.Fprintf(w, "%s  replicas\tbuildkit deployment replica count (default 1)\n", prefix)
-	fmt.Fprintf(w, "%s  rootless\trun in rootless mode (default is root mode)\n", prefix)
-	fmt.Fprintf(w, "%s  loadbalance\tspecify strategy (%s or %s - default %s)\n", prefix, LoadbalanceRandom, LoadbalanceSticky, LoadbalanceSticky)
-	fmt.Fprintf(w, "%s  worker\tspecify worker back-end (%s or %s - default %s)\n", prefix, WorkerRunc, WorkerContainerd, WorkerContainerd)
-	w.Flush()
-
-	// TODO add more options to fine tune things...
 
 	return usage.String()
 }
@@ -166,6 +150,7 @@ func (d *Driver) initDriverFromConfig() error {
 			d.loadbalance = v
 		case "worker":
 			switch v {
+			case "auto":
 			case WorkerContainerd:
 			case WorkerRunc:
 			default:
@@ -180,6 +165,7 @@ func (d *Driver) initDriverFromConfig() error {
 			deploymentOpt.DockerSockHostPath = v
 		case "runtime":
 			switch v {
+			case "auto":
 			case "docker":
 			case "containerd":
 			default:
@@ -192,11 +178,15 @@ func (d *Driver) initDriverFromConfig() error {
 		}
 	}
 
+	if deploymentOpt.ContainerRuntime == "auto" {
+		deploymentOpt.ContainerRuntime = DefaultContainerRuntime
+	}
+
 	// Wire up defaults based on the chosen runtime
-	if deploymentOpt.ContainerRuntime == "containerd" && deploymentOpt.Worker == "" {
+	if deploymentOpt.ContainerRuntime == "containerd" && deploymentOpt.Worker == "auto" {
 		deploymentOpt.Worker = WorkerContainerd
 	}
-	if deploymentOpt.ContainerRuntime == "docker" && deploymentOpt.Worker == "" {
+	if deploymentOpt.ContainerRuntime == "docker" && deploymentOpt.Worker == "auto" {
 		// This makes sense as long as Docker hasn't shipped a newer version of containerd bundled
 		// into the stable engine packaging.  In the future, we may want to default to containerd
 		deploymentOpt.Worker = WorkerRunc
