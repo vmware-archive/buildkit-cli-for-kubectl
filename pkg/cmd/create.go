@@ -3,13 +3,16 @@
 package commands
 
 import (
-	"encoding/csv"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/bkimage"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
 	"github.com/google/shlex"
@@ -18,57 +21,68 @@ import (
 	"github.com/spf13/cobra"
 )
 
-type createOptions struct {
-	commonKubeOptions
+const (
+	DefaultDriver = "kubernetes"
+)
 
-	name       string
-	driver     string
-	platform   []string
-	flags      string
-	configFile string
-	driverOpts []string
-	progress   string
+type createOptions struct {
+	name                string
+	image               string
+	runtime             string
+	containerdSock      string
+	containerdNamespace string
+	dockerSock          string
+	replicas            int
+	rootless            bool
+	loadbalance         string
+	worker              string
+	driver              string
+	platform            []string
+	flags               string
+	configFile          string
+	progress            string
 }
 
-func runCreate(streams genericclioptions.IOStreams, in createOptions) error {
+func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *rootOptions) error {
 	ctx := appcontext.Context()
 
 	if in.name == "default" {
 		return errors.Errorf("default is a reserved name and cannot be used to identify builder instance")
 	}
 
-	var driverFactory driver.Factory
-	var err error
-	if in.driver == "" {
-		driverFactory, err = driver.GetDefaultFactory(ctx, true)
-		if err != nil {
-			return err
-		}
-		if driverFactory == nil {
-			return errors.Errorf("no valid drivers found")
-		}
-	} else {
-		driverFactory = driver.GetFactory(in.driver, true)
-		if driverFactory == nil {
-			return errors.Errorf("failed to find driver %q", in.driver)
-		}
+	driverFactory := driver.GetFactory(DefaultDriver, true)
+	if driverFactory == nil {
+		return errors.Errorf("failed to find driver %q", in.driver)
 	}
 
 	var flags []string
+	var err error
 	if in.flags != "" {
 		flags, err = shlex.Split(in.flags)
 		if err != nil {
 			return errors.Wrap(err, "failed to parse buildkit flags")
 		}
 	}
-	driverOptsMap, err := csvToMap(in.driverOpts)
+
+	// TODO: consider swapping this out and passing the createOptions directly instead of
+	//       using a hashmap
+	driverOpts := map[string]string{
+		"image":                in.image,
+		"replicas":             strconv.Itoa(in.replicas),
+		"rootless":             strconv.FormatBool(in.rootless),
+		"loadbalance":          in.loadbalance,
+		"worker":               in.worker,
+		"containerd-namespace": in.containerdNamespace,
+		"containerd-sock":      in.containerdSock,
+		"docker-sock":          in.dockerSock,
+		"runtime":              in.runtime,
+	}
+
+	d, err := driver.GetDriver(ctx, in.name, driverFactory, rootOpts.KubeClientConfig, flags, in.configFile, driverOpts, "" /*contextPathHash*/)
 	if err != nil {
 		return err
 	}
-	d, err := driver.GetDriver(ctx, in.name, driverFactory, in.KubeClientConfig, flags, in.configFile, driverOptsMap, "" /*contextPathHash*/)
-	if err != nil {
-		return err
-	}
+
 	pw := progress.NewPrinter(ctx, os.Stderr, in.progress)
 	_, _, err = driver.Boot(ctx, d, pw)
 	if err != nil {
@@ -78,18 +92,11 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions) error {
 	return nil
 }
 
-func createCmd(streams genericclioptions.IOStreams) *cobra.Command {
-	options := createOptions{
-		commonKubeOptions: commonKubeOptions{
-			configFlags: genericclioptions.NewConfigFlags(true),
-			IOStreams:   streams,
-		},
-	}
+func createCmd(streams genericclioptions.IOStreams, rootOpts *rootOptions) *cobra.Command {
+	options := createOptions{}
 
-	var drivers []string
 	var driverUsage []string
-	for s, f := range driver.GetFactories() {
-		drivers = append(drivers, s)
+	for _, f := range driver.GetFactories() {
 		driverUsage = append(driverUsage, f.Usage())
 	}
 
@@ -104,46 +111,32 @@ Driver Specific Usage:
 			if len(args) > 0 {
 				options.name = args[0]
 			}
-			if err := options.Complete(cmd, args); err != nil {
+			if err := rootOpts.Complete(cmd, args); err != nil {
 				return err
 			}
-			if err := options.Validate(); err != nil {
+			if err := rootOpts.Validate(); err != nil {
 				return err
 			}
-			return runCreate(streams, options)
+			return runCreate(streams, options, rootOpts)
 		},
 		SilenceUsage: true,
 	}
 
 	flags := cmd.Flags()
 
-	flags.StringVar(&options.driver, "driver", "", fmt.Sprintf("Driver to use (available: %v)", drivers))
 	flags.StringVar(&options.flags, "buildkitd-flags", "", "Flags for buildkitd daemon")
 	flags.StringVar(&options.configFile, "config", "", "BuildKit config file")
 	flags.StringArrayVar(&options.platform, "platform", []string{}, "Fixed platforms for current node")
-	flags.StringArrayVar(&options.driverOpts, "driver-opt", []string{}, "Options for the driver")
-	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output (auto, plain, tty). Use plain to show container output")
-
-	options.configFlags.AddFlags(flags)
+	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output [auto, plain, tty]. Use plain to show container output")
+	flags.StringVar(&options.image, "image", bkimage.DefaultImage, "Specify an alternate buildkit image")
+	flags.StringVar(&options.runtime, "runtime", "auto", "Container runtime used by cluster [auto, docker, containerd]")
+	flags.StringVar(&options.containerdSock, "containerd-sock", kubernetes.DefaultContainerdSockPath, "Path to the containerd.sock on the host")
+	flags.StringVar(&options.containerdNamespace, "containerd-namespace", kubernetes.DefaultContainerdNamespace, "Containerd namespace to build images in")
+	flags.StringVar(&options.dockerSock, "docker-sock", kubernetes.DefaultDockerSockPath, "Path to the docker.sock on the host")
+	flags.IntVar(&options.replicas, "replicas", 1, "BuildKit deployment replica count")
+	flags.BoolVar(&options.rootless, "rootless", false, "Run in rootless mode")
+	flags.StringVar(&options.loadbalance, "loadbalance", "random", "Load balancing strategy [random, sticky]")
+	flags.StringVar(&options.worker, "worker", "auto", "Worker backend [auto, runc, containerd]")
 
 	return cmd
-}
-
-func csvToMap(in []string) (map[string]string, error) {
-	m := make(map[string]string, len(in))
-	for _, s := range in {
-		csvReader := csv.NewReader(strings.NewReader(s))
-		fields, err := csvReader.Read()
-		if err != nil {
-			return nil, err
-		}
-		for _, v := range fields {
-			p := strings.SplitN(v, "=", 2)
-			if len(p) != 2 {
-				return nil, errors.Errorf("invalid value %q, expecting k=v", v)
-			}
-			m[p[0]] = p[1]
-		}
-	}
-	return m, nil
 }

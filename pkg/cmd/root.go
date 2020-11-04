@@ -27,17 +27,24 @@ can be pushed to a registry.`,
 }
 
 type rootOptions struct {
+	commonKubeOptions
+
 	builder string
 }
 
 func addCommands(cmd *cobra.Command, streams genericclioptions.IOStreams) {
-	opts := &rootOptions{}
+	opts := &rootOptions{
+		commonKubeOptions: commonKubeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+			IOStreams:   streams,
+		},
+	}
 	rootFlags(opts, cmd.PersistentFlags())
 
 	cmd.AddCommand(
 		buildCmd(streams, opts),
 		//bakeCmd(streams, opts),
-		createCmd(streams),
+		createCmd(streams, opts),
 		rmCmd(streams),
 		lsCmd(streams),
 		//useCmd(streams, opts),
@@ -54,10 +61,16 @@ func addCommands(cmd *cobra.Command, streams genericclioptions.IOStreams) {
 
 func rootFlags(options *rootOptions, flags *pflag.FlagSet) {
 	flags.StringVar(&options.builder, "builder", os.Getenv("BUILDX_BUILDER"), "Override the configured builder instance")
+	options.configFlags.AddFlags(flags)
 }
 
 func NewRootBuildCmd(streams genericclioptions.IOStreams) *cobra.Command {
-	opts := &rootOptions{}
+	opts := &rootOptions{
+		commonKubeOptions: commonKubeOptions{
+			configFlags: genericclioptions.NewConfigFlags(true),
+			IOStreams:   streams,
+		},
+	}
 	cmd := buildCmd(streams, opts)
 	rootFlags(opts, cmd.PersistentFlags())
 	return cmd
