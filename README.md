@@ -1,4 +1,4 @@
-# Buildkit CLI for kubectl 
+# Buildkit CLI for kubectl
 
 Buildkit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.
 It replaces the `docker build` command to let you quickly and easily build your single and
@@ -31,7 +31,7 @@ The BuildKit builder should work in most Kubernetes environments. We tested it w
   * VMware Fusion
   * Docker Desktop
 
-You should use Kubernetes version 1.16 or greater.
+You should use Kubernetes version 1.14 or greater.
 
 
 ### Supports building multi-architecture images
