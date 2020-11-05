@@ -22,7 +22,6 @@ jobs:
       name: Check out code into the Go module directory
 
     - name: Build
-      run: make dist
       run: make dist VERSION=${{ github.ref }}
 
     - name: Create Release
