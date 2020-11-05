@@ -25,7 +25,7 @@ images can be used inside of your cluster, or pushed to an image registry for di
 
 The BuildKit builder should work in most Kubernetes environments. We tested it with:
 
-  * vSphere Tanzu
+  * [vSphere Tanzu](./docs/tanzu.md)
   * Amazon EKS
   * Minikube
   * VMware Fusion
