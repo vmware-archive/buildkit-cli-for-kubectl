@@ -1,6 +1,6 @@
-# Buildkit CLI for kubectl
+# BuildKit CLI for kubectl
 
-Buildkit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.
+BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.
 It replaces the `docker build` command to let you quickly and easily build your single and
 multi-architecture container images.
 
@@ -54,7 +54,21 @@ emulate architectures when it's difficult to cross-compile.
 
 ### Installing the tarball
 
+Head over to https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases and download the `tgz` asset for your platform.
+
+Once downloaded, extract it into your path.  For example, on MacOS
+```sh
+cat darwin-*.tgz | tar -C /usr/local/bin -xvf -
+```
+
+Test your install with
+```sh
+kubectl build --help
+```
+
 ### Building from source
+
+Check out our [contributing](./CONTRIBUTING.md) guide for instructions on setting up your environment and build instructions
 
 ### Changing contexts
 
@@ -84,5 +98,4 @@ kubectl build --push --registry-secret mysecret -t <registry hostname>/<namespac
 
 ## Contributing
 
-
-
+Check out our [contributing](./CONTRIBUTING.md) for guidance on how to help contribute to the project.
