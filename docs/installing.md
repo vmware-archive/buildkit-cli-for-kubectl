@@ -1,4 +1,4 @@
-# Using BuildKit CLI for kubectl on VMware vSphere Tanzu
+# VMware vSphere Tanzu
 
 If your company runs VMware vSphere 7, you have the ability to run Tanzu *guest clusters*, which are kubernetes clusters running directly on your virtual infrastructure.  These can be used as "personal dev/test clusters" or "build farms" to take advantage of the compute power of the underlying servers.
 
@@ -109,10 +109,28 @@ kubectl create rolebinding rolebinding-default-privileged-sa-ns_default \
 At this point you should be able to run `kubectl build ...` on your cluster and run workloads with the images you've built.
 
 
-# Multinode Hints
+## Multinode Hints
 
 If you provisioned a multi-node cluster, remember to scale up your builders so your images will be loaded onto all the nodes.  For example, if you have a 3 node cluster
 
 ```
 kubectl buildkit create --replicas 3
 ```
+
+# VMware Fusion
+
+If you are running VMware Fusion v12 or newer, you have the ability to run kubernetes directly without having to install your own VMs and manage the Guest operating system.
+
+From a terminal, here's how to set it up:
+
+```sh
+vctl system start
+vctl kind
+kind create cluster
+```
+
+Once you have completed those steps, you have a running `kind` kubernetes cluster.  You can then run `kubectl build ...` and run pods with the images you have built.
+
+## References
+
+For more information see [Enabling KIND to Use vctl Container as Nodes to Run Kubernetes Clusters](https://docs.vmware.com/en/VMware-Fusion/12/com.vmware.fusion.using.doc/GUID-1CA929BB-93A9-4F1C-A3A8-7A3A171FAC35.html)
