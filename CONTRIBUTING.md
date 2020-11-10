@@ -8,7 +8,7 @@ Welcome to the BuildKit CLI for kubectl project!  We welcome contributions from 
 
 Fork, then clone the repo:
 
-    git clone git@github.com:your-username/buildkit-cli-for-kubectl.git $(GOPATH)/src/github.com/vmware-tanzu/buildkit-cli-for-kubectl
+    git clone git@github.com:your-username/buildkit-cli-for-kubectl.git ${GOPATH}/src/github.com/vmware-tanzu/buildkit-cli-for-kubectl
 
 We use Go Modules to carry most dependencies, but you'll need a few additional tools installed on your system:
 
