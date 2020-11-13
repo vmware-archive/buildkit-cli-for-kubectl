@@ -267,6 +267,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 }
 
 func addDockerSockMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
+	labels := labels(opt)
 	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
 		d.Spec.Template.Spec.Containers[0].VolumeMounts,
 		corev1.VolumeMount{
@@ -287,6 +288,23 @@ func addDockerSockMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			},
 		},
 	)
+
+	// If we're using the dockerd socket to make images available
+	// on the nodes, we want to distribute the workers across the cluster
+	// and not let them clump together on a single node
+	d.Spec.Template.Spec.Affinity = &corev1.Affinity{
+		PodAntiAffinity: &corev1.PodAntiAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: labels,
+					},
+					TopologyKey: "kubernetes.io/hostname",
+				},
+			},
+		},
+	}
+
 	return nil
 }
 
