@@ -48,7 +48,8 @@ architectures such as:
  * windows/amd64 (Intel based 64 bit Windows images)
 
 Future versions will include native builds in mixed clusters, as well as being able to
-emulate architectures when it's difficult to cross-compile.
+emulate architectures when it's difficult to cross-compile. Check out the [multi-architecture](./docs/multiarch.md)
+documentation for more information.
 
 ## Getting started
 
