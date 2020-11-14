@@ -100,3 +100,5 @@ kubectl build --push --registry-secret mysecret -t <registry hostname>/<namespac
 ## Contributing
 
 Check out our [contributing](./CONTRIBUTING.md) for guidance on how to help contribute to the project.
+
+This project wouldn't have been possble without the awesome upstream work from [BuildKit](https://github.com/moby/buildkit) which serves as the back-end builder, and [buildx](https://github.com/docker/buildx) which this CLI was derived from.
