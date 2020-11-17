@@ -76,4 +76,4 @@ When you submit a pull request, our CI system will exercise both of these types 
 
 ## Connecting with other Contributors
 
-We're just getting started.  For the moment, the main communication channel is through **XXX (insert link to google group here once created)**.  Over time we'll add more channels and update this doc accordingly.
+We're just getting started.  For the moment, the main communication channel is through buildkit-cli-for-kubectl@googlegroups.com which you can subscribe to at https://groups.google.com/g/buildkit-cli-for-kubectl  Over time we'll add more channels and update this doc accordingly.
