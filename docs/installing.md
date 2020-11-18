@@ -134,3 +134,11 @@ Once you have completed those steps, you have a running `kind` kubernetes cluste
 ## References
 
 For more information see [Enabling KIND to Use vctl Container as Nodes to Run Kubernetes Clusters](https://docs.vmware.com/en/VMware-Fusion/12/com.vmware.fusion.using.doc/GUID-1CA929BB-93A9-4F1C-A3A8-7A3A171FAC35.html)
+
+# K3d
+
+At present, k3d utilizes containerd as the runtime, but does not mount the filesystems used by containerd in a way that allows child containers to mount those directories with bidirectional propagation.  This prevents the containerd runtime for BuildKit from working properly.  This prevents images from being loaded into the container runtime and being immediately available to run pods.
+
+As a workaround, you can explicitly create a builder with `kubectl buildkit create --rootless` however, to use the images you build, you will need to always specify `--push` during build and push the images to a registry.
+
+Tracking issue: [#46](https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/issues/46)
