@@ -30,6 +30,7 @@ The BuildKit builder should work in most Kubernetes environments. We tested it w
   * Minikube
   * [VMware Fusion](./docs/installing.md#vmware-fusion)
   * Docker Desktop
+  * k0s
 
 You should use Kubernetes version 1.14 or greater.
 
