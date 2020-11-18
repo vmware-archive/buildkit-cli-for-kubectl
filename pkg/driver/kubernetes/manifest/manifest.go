@@ -27,7 +27,7 @@ type DeploymentOpt struct {
 
 const (
 	containerName = "buildkitd"
-	AnnotationKey = "buildkit.org/builder"
+	AnnotationKey = "buildkit.mobyproject.org/builder"
 )
 
 func labels(opt *DeploymentOpt) map[string]string {
