@@ -16,7 +16,11 @@ NATIVE_ARCH=$(shell uname | tr A-Z a-z)
 GOARCH=amd64
 export GOARCH
 CI_OSES=linux darwin windows
-CI_BUILD_TARGETS=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os)/kubectl-buildkit $(BIN_DIR)/$(os)/kubectl-build)
+CI_BUILD_TARGETS=$(foreach os,$(CI_OSES),\
+	$(if $(filter windows,$(os)),\
+		$(BIN_DIR)/$(os)/kubectl-buildkit.exe $(BIN_DIR)/$(os)/kubectl-build.exe,\
+		$(BIN_DIR)/$(os)/kubectl-buildkit $(BIN_DIR)/$(os)/kubectl-build) \
+	)
 CI_ARCHIVES=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os).tgz)
 
 GO_MOD_NAME=github.com/vmware-tanzu/buildkit-cli-for-kubectl
@@ -37,10 +41,10 @@ clean:
 .PHONY: build
 build: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
 
-$(BIN_DIR)/%/kubectl-buildkit: $(GO_DEPS)
+$(BIN_DIR)/%/kubectl-buildkit $(BIN_DIR)/%/kubectl-buildkit.exe: $(GO_DEPS)
 	GOOS=$* go build $(GO_FLAGS) -o $@ ./cmd/kubectl-buildkit
 
-$(BIN_DIR)/%/kubectl-build: $(GO_DEPS)
+$(BIN_DIR)/%/kubectl-build $(BIN_DIR)/%/kubectl-build.exe: $(GO_DEPS)
 	GOOS=$* go build $(GO_FLAGS) -o $@  ./cmd/kubectl-build
 
 install: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
