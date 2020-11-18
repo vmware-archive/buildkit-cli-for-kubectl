@@ -263,12 +263,11 @@ func buildCmd(streams genericclioptions.IOStreams, rootOpts *rootOptions) *cobra
 	}
 
 	cmd := &cobra.Command{
-		Use:     "build [OPTIONS] PATH | URL | -",
-		Aliases: []string{"b"},
-		Short:   "Start a build",
+		Use:   "build [OPTIONS] PATH | URL | -",
+		Short: "Start a build",
 		Long: `Start a build
 
-Alias:
+Aliases:
   'kubectl build ...'
   'kubectl buildkit build ...'
 
