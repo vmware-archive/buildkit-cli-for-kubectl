@@ -31,6 +31,7 @@ The BuildKit builder should work in most Kubernetes environments. We tested it w
   * [VMware Fusion](./docs/installing.md#vmware-fusion)
   * Docker Desktop
   * k0s
+  * [k3d (limited support)](./docs/installing.md#k3d)
 
 You should use Kubernetes version 1.14 or greater.
 
