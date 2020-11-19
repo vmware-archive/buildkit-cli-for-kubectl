@@ -12,6 +12,9 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+    - name: Get the target release version
+      id: get_version
+      run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
 
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -22,7 +25,7 @@ jobs:
       name: Check out code into the Go module directory
 
     - name: Build
-      run: make dist VERSION=${{ github.event.release.tag_name }}
+      run: make dist VERSION=${{ steps.get_version.outputs.VERSION }}
 
     - name: Create Release
       id: create_release
@@ -31,7 +34,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.ref }}
-        release_name: Release ${{ github.event.release.tag_name }}
+        release_name: Release ${{ steps.get_version.outputs.VERSION }}
         draft: true
         prerelease: true
 
@@ -42,7 +45,7 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./bin/linux.tgz
-        asset_name: linux-${{ github.event.release.tag_name }}.tgz
+        asset_name: linux-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
 
     - name: Upload macos
@@ -52,7 +55,7 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./bin/darwin.tgz
-        asset_name: darwin-${{ github.event.release.tag_name }}.tgz
+        asset_name: darwin-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
 
     - name: Upload windows
@@ -62,5 +65,5 @@ jobs:
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./bin/windows.tgz
-        asset_name: windows-${{ github.event.release.tag_name }}.tgz
+        asset_name: windows-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
