@@ -57,10 +57,10 @@ print-%:
 build-ci: $(CI_BUILD_TARGETS)
 
 .PHONY: dist
-dist: $(CI_ARCHIVES)
+dist: $(CI_BUILD_TARGETS) $(CI_ARCHIVES)
 
-$(BIN_DIR)/%.tgz: $(BIN_DIR)/%/kubectl-buildkit $(BIN_DIR)/%/kubectl-build
-	cd $(BIN_DIR)/$* && tar -czvf ../$*.tgz kubectl-buildkit kubectl-build
+$(BIN_DIR)/%.tgz: $(BIN_DIR)/%/*
+	cd $(BIN_DIR)/$* && tar -czvf ../$*.tgz kubectl-*
 
 .PHONY: test
 test:
