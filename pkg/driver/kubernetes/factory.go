@@ -139,7 +139,9 @@ func (d *Driver) initDriverFromConfig() error {
 			if err != nil {
 				return err
 			}
-			deploymentOpt.Image = bkimage.DefaultRootlessImage
+			if deploymentOpt.Rootless {
+				deploymentOpt.Image = bkimage.DefaultRootlessImage
+			}
 		case "loadbalance":
 			switch v {
 			case LoadbalanceSticky:
@@ -232,7 +234,6 @@ func (d *Driver) initDriverFromConfig() error {
 		//        user tries to set properties that should be in the config file
 		d.configMap = manifest.NewConfigMap(deploymentOpt, data)
 	}
-
 	return nil
 }
 

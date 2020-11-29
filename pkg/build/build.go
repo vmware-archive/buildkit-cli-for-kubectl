@@ -364,8 +364,8 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 			} else if driverFeatures[driver.DockerExporter] {
 				opt.Exports[i].Type = "docker"
 			} else {
-				// TODO should we allow building without load or push?
-				return nil, nil, errors.Wrap(err, "unable to determine runtime, please specify --output=type=[docker || containerd] or --push")
+				// TODO should we allow building without load or push, perhaps a new "nil" or equivalent output type?
+				return nil, nil, errors.Errorf("loading image into cluster runtime not supported by this builder, please specify --push or a client local output: --output=type=local,dest=. --output=type=tar,dest=out.tar ")
 			}
 		}
 	}

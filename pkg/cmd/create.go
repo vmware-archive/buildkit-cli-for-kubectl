@@ -128,7 +128,7 @@ Driver Specific Usage:
 	flags.StringVar(&options.configFile, "config", "", "BuildKit config file")
 	flags.StringArrayVar(&options.platform, "platform", []string{}, "Fixed platforms for current node")
 	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output [auto, plain, tty]. Use plain to show container output")
-	flags.StringVar(&options.image, "image", bkimage.DefaultImage, "Specify an alternate buildkit image")
+	flags.StringVar(&options.image, "image", "", fmt.Sprintf("Specify an alternate buildkit image (default: %s)", bkimage.DefaultImage))
 	flags.StringVar(&options.runtime, "runtime", "auto", "Container runtime used by cluster [auto, docker, containerd]")
 	flags.StringVar(&options.containerdSock, "containerd-sock", kubernetes.DefaultContainerdSockPath, "Path to the containerd.sock on the host")
 	flags.StringVar(&options.containerdNamespace, "containerd-namespace", kubernetes.DefaultContainerdNamespace, "Containerd namespace to build images in")

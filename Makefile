@@ -3,6 +3,7 @@
 
 VERSION?=$(shell git describe --tags --first-parent --abbrev=7 --long --dirty --always)
 TEST_KUBECONFIG?=$(HOME)/.kube/config
+TEST_TIMEOUT=300s
 
 # Verify Go in PATH
 ifeq (, $(shell which go))
@@ -36,7 +37,7 @@ help:
 
 .PHONY: clean
 clean:
-	-rm -rf $(BIN_DIR) cover*.out cover.html
+	-rm -rf $(BIN_DIR) cover*.out cover*.html
 
 .PHONY: build
 build: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
@@ -70,7 +71,7 @@ test:
 integration:
 	@echo "Running integration tests with $(TEST_KUBECONFIG)"
 	@kubectl config get-contexts
-	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test $(GO_FLAGS) $(EXTRA_GO_TEST_FLAGS)  \
+	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test -timeout $(TEST_TIMEOUT) $(GO_FLAGS) $(EXTRA_GO_TEST_FLAGS)  \
 		$(GO_COVER_FLAGS) -coverprofile=./cover-int.out \
 		./integration/...
 
