@@ -35,6 +35,11 @@ Assuming you have a valid kube configuration pointed at a cluster, you can run t
 make integration
 ```
 
+If you want to run a single suite of tests while working on a specific area of the tests or main code, use something like this:
+```
+make integration EXTRA_GO_TEST_FLAGS="-run TestConfigMapSuite -v"
+```
+
 To check your code for **lint/style consistency**, run
 ```
 make lint

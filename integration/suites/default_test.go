@@ -12,16 +12,14 @@ import (
 
 type DefaultSuite struct{ common.BaseSuite }
 
-func (s *DefaultSuite) SetupTest() {
-	// For the "default" scenario, we rely on the initial test case to establish the builder with defaults
-}
-
 func TestDefaultSuite(t *testing.T) {
 	common.Skipper(t)
 	//t.Parallel() // TODO - tests fail if run in parallel, may be actual race bug
 	suite.Run(t, &DefaultSuite{
 		BaseSuite: common.BaseSuite{
 			Name: "buildkit", // TODO pull this from the actual default name
+			// For the "default" scenario, we rely on the initial test case to establish the builder with defaults
+			SkipSetupCreate: true,
 		},
 	})
 }
