@@ -4,6 +4,7 @@ package podchooser
 
 import (
 	"context"
+	"fmt"
 	"math/rand"
 	"sort"
 	"time"
@@ -30,6 +31,9 @@ func (pc *RandomPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) 
 	pods, err := ListRunningPods(ctx, pc.PodClient, pc.Deployment)
 	if err != nil {
 		return nil, err
+	}
+	if len(pods) == 0 {
+		return nil, fmt.Errorf("no builder pods are running")
 	}
 	randSource := pc.RandSource
 	if randSource == nil {

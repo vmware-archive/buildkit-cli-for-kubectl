@@ -117,7 +117,7 @@ kubectl apply -f ./examples/local-registry.yaml
 kubectl buildkit create --config ./examples/local-registry-buildkitd.toml
 ```
 
-You can then build using the registry cache with something like
+You can then build using the registry cache with the command:
 ```
 kubectl build -t myimage --cache-to=type=registry,ref=registry:5000/cache --cache-from=type=registry,ref=registry:5000/cache .
 ```

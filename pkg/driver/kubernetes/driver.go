@@ -22,6 +22,7 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	clientappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -80,9 +81,11 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 	return progress.Wrap("[internal] booting buildkit", l, func(sub progress.SubLogger) error {
 		_, err := d.configMapClient.Get(ctx, d.configMap.Name, metav1.GetOptions{})
 
-		if err != nil {
+		if err != nil && kubeerrors.IsNotFound(err) {
 			// Doesn't exist, create it
 			_, err = d.configMapClient.Create(ctx, d.configMap, metav1.CreateOptions{})
+		} else if err != nil {
+			return errors.Wrapf(err, "configmap get error for %q", d.configMap.Name)
 		} else if d.userSpecifiedConfig {
 			// err was nil, thus it already exists, and user passed a new config, so update it
 			_, err = d.configMapClient.Update(ctx, d.configMap, metav1.UpdateOptions{})
@@ -273,11 +276,11 @@ func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
 						if err != nil {
 							return err
 						}
-						// Instead of updating, we'll just delete and re-create
-						err = d.Rm(ctx, true)
-						if err != nil {
-							return err
+						// Instead of updating, we'll just delete the deployment and re-create
+						if err := d.deploymentClient.Delete(ctx, d.deployment.Name, metav1.DeleteOptions{}); err != nil {
+							return errors.Wrapf(err, "error while calling deploymentClient.Delete for %q", d.deployment.Name)
 						}
+
 						// Wait for the pods to wind down before re-deploying...
 						for ; try < 100; try++ {
 							remainingPods := 0

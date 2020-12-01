@@ -39,6 +39,7 @@ If you want to run a single suite of tests while working on a specific area of t
 ```
 make integration EXTRA_GO_TEST_FLAGS="-run TestConfigMapSuite -v"
 ```
+Hint: find the current test suites with `grep "func Test" integration/suites/*.go`
 
 To check your code for **lint/style consistency**, run
 ```
