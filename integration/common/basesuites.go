@@ -3,6 +3,7 @@
 package common
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"strings"
@@ -10,24 +11,37 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
+
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
 )
 
 type BaseSuite struct {
 	suite.Suite
-	Name        string
-	CreateFlags []string
+	Name            string
+	CreateFlags     []string
+	SkipSetupCreate bool
+
+	ClientSet *kubernetes.Clientset
+	Namespace string
 }
 
 func (s *BaseSuite) SetupTest() {
-	logrus.Infof("%s: Setting up builder", s.Name)
-	args := append(
-		[]string{
-			s.Name,
-		},
-		s.CreateFlags...,
-	)
-	err := RunBuildkit("create", args)
-	require.NoError(s.T(), err, "%s: builder create failed", s.Name)
+	var err error
+	if !s.SkipSetupCreate {
+		logrus.Infof("%s: Setting up builder", s.Name)
+		args := append(
+			[]string{
+				s.Name,
+			},
+			s.CreateFlags...,
+		)
+		err := RunBuildkit("create", args)
+		require.NoError(s.T(), err, "%s: builder create failed", s.Name)
+	}
+
+	s.ClientSet, s.Namespace, err = GetKubeClientset()
+	require.NoError(s.T(), err, "%s: kube client failed", s.Name)
 }
 
 func (s *BaseSuite) TearDownTest() {
@@ -36,6 +50,10 @@ func (s *BaseSuite) TearDownTest() {
 		s.Name,
 	})
 	require.NoError(s.T(), err, "%s: builder rm failed", s.Name)
+	configMapClient := s.ClientSet.CoreV1().ConfigMaps(s.Namespace)
+	_, err = configMapClient.Get(context.Background(), s.Name, metav1.GetOptions{})
+	require.Error(s.T(), err, "config map wasn't cleaned up")
+	require.Contains(s.T(), err.Error(), "not found")
 }
 
 func (s *BaseSuite) TestSimpleBuild() {

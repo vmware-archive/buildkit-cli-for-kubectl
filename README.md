@@ -98,6 +98,29 @@ kubectl create secret docker-registry mysecret --docker-server='<registry hostna
 kubectl build --push --registry-secret mysecret -t <registry hostname>/<namespace>/<repo>:<tag> -f Dockerfile ./
 ```
 
+### Registry-based Caching
+
+BuildKit is smart about caching prior build results for efficient incremental
+builds.  This works great for a single-node scenario, but if you want to build
+on a multi-node cluster, you can take advantage of BuildKit's ability to use a
+registry for cache persistence.  This can have a significant improvement on
+incremental build times regardless of which node in the cluster your build lands
+on.  For best performance, this registry should be "local" to the cluster.  The
+following examples demonstrate this pattern:
+
+* [./examples/local-registry.yaml](./examples/local-registry.yaml) A kubernetes Deployment+Service to run a local registry (unauthenticated)
+* [./examples/local-registry-buildkitd.toml](./examples/local-registry-buildkitd.toml) A BuildKit TOML configuration example for the above Registry that configures it for **"insecure" access**
+
+To setup from the root of this tree:
+```
+kubectl apply -f ./examples/local-registry.yaml
+kubectl buildkit create --config ./examples/local-registry-buildkitd.toml
+```
+
+You can then build using the registry cache with the command:
+```
+kubectl build -t myimage --cache-to=type=registry,ref=registry:5000/cache --cache-from=type=registry,ref=registry:5000/cache .
+```
 
 ## Contributing
 

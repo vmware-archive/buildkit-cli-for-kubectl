@@ -1,0 +1,11 @@
+# Example buildkitd.toml configuration for a local insecure registry
+# Initialize buildkit with:
+#
+#  kubectl buildkit create --config ./local-registry-buildkitd.toml
+debug = false
+[worker.containerd]
+  namespace = "k8s.io"
+[registry."registry:5000"]
+  http = true
+  insecure = true
+

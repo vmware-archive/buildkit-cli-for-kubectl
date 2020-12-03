@@ -233,6 +233,7 @@ func (d *Driver) initDriverFromConfig() error {
 		//        and make sure things get wired up properly, and/or error out if the
 		//        user tries to set properties that should be in the config file
 		d.configMap = manifest.NewConfigMap(deploymentOpt, data)
+		d.userSpecifiedConfig = true
 	}
 	return nil
 }
