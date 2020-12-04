@@ -22,6 +22,8 @@ func TestRootlessSuite(t *testing.T) {
 	})
 }
 
-// func (s *rootlessSuite) TestSimpleBuild() {
-// 	s.T().Skip("Rootless doesn't support loading to the runtime")
-// }
+func (s *rootlessSuite) TestSimpleBuild() {
+	// This test in the Base Suite attempts to run a pod, so we need to skip it
+	// Other tests will exercise the builder without running a pod
+	s.T().Skip("Rootless doesn't support loading to the runtime")
+}

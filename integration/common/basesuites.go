@@ -69,9 +69,10 @@ func (s *BaseSuite) TestSimpleBuild() {
 			"--builder", s.Name,
 		)
 	}
+	imageName := "dummy.acme.com/" + s.Name + "replaceme:latest"
 	args = append(
 		args,
-		"--tag", s.Name+"replaceme:latest",
+		"--tag", imageName,
 		dir,
 	)
 	err = RunBuild(args)
@@ -81,6 +82,9 @@ func (s *BaseSuite) TestSimpleBuild() {
 	} else {
 		require.NoError(s.T(), err, "build failed")
 	}
+
+	err = RunSimpleBuildImageAsPod(context.Background(), s.Name+"-testbuiltimage", imageName, s.Namespace, s.ClientSet)
+	require.NoError(s.T(), err, "failed to start pod with image")
 }
 
 func isRootlessCreate(flags []string) bool {
