@@ -22,11 +22,11 @@ jobs:
     - name: Codecov
       uses: codecov/codecov-action@v1
       with:
-        file: cover-unit.out 
+        file: cover-unit.out
         flags: unit-tests
         name: codecov-unit-test
 
-  test-integration:
+  test-integration-kind-containerd:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
@@ -53,9 +53,41 @@ jobs:
     - name: Gather integration coverage results
       uses: codecov/codecov-action@v1
       with:
-        file: cover-int.out 
+        file: cover-int.out
         flags: integration-tests
-        name: codecov-integration-test
+        name: codecov-integration-test-kind
+
+  test-integration-dockerd:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+    - name: Setup kubeadm cluster with default docker runtime
+      run: |
+        set -x
+        sudo apt-get install -y kubeadm kubelet
+        sudo swapoff -a
+        sudo kubeadm init
+        mkdir -p $HOME/.kube/
+        sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        sudo chown $USER $HOME/.kube/config
+        kubectl taint nodes --all node-role.kubernetes.io/master-
+        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+        kubectl wait --for=condition=ready --timeout=30s node --all
+        kubectl get nodes
+
+    - name: Run integration tests
+      run: make integration EXTRA_GO_TEST_FLAGS=-v
+    - name: Gather integration coverage results
+      uses: codecov/codecov-action@v1
+      with:
+        file: cover-int.out
+        flags: integration-tests
+        name: codecov-integration-test-dockerd
 
   lint:
     runs-on: ubuntu-latest
