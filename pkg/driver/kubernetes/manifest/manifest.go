@@ -160,7 +160,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 		},
 		corev1.VolumeMount{
 			Name:             "var-lib-buildkit",
-			MountPath:        "/var/lib/buildkit",
+			MountPath:        "/var/lib/buildkit/" + opt.Name,
 			MountPropagation: &mountPropagationBidirectional,
 		},
 		corev1.VolumeMount{
@@ -204,7 +204,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			Name: "var-lib-buildkit",
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/var/lib/buildkit",
+					Path: "/var/lib/buildkit/" + opt.Name,
 					Type: &hostPathDirectoryOrCreate,
 				}},
 		},
@@ -246,10 +246,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 		},
 	)
 
-	// If this is a multi-user cluster and other users are running
-	// containerd based builders in other namespaces, we'll fail to start due to
-	// shared mounts for the buildkit cache
-	// buildkitd: could not lock /var/lib/buildkit/buildkitd.lock, another instance running?
+	// Spread our builders out on a multi-node cluster
 	d.Spec.Template.Spec.Affinity = &corev1.Affinity{
 		PodAntiAffinity: &corev1.PodAntiAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{

@@ -14,7 +14,7 @@ type DefaultSuite struct{ common.BaseSuite }
 
 func TestDefaultSuite(t *testing.T) {
 	common.Skipper(t)
-	//t.Parallel() // TODO - tests fail if run in parallel, may be actual race bug
+	t.Parallel()
 	suite.Run(t, &DefaultSuite{
 		BaseSuite: common.BaseSuite{
 			Name: "buildkit", // TODO pull this from the actual default name

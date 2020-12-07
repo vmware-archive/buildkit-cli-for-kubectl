@@ -26,7 +26,7 @@ type BaseSuite struct {
 	Namespace string
 }
 
-func (s *BaseSuite) SetupTest() {
+func (s *BaseSuite) SetupSuite() {
 	var err error
 	if !s.SkipSetupCreate {
 		logrus.Infof("%s: Setting up builder", s.Name)
@@ -44,7 +44,7 @@ func (s *BaseSuite) SetupTest() {
 	require.NoError(s.T(), err, "%s: kube client failed", s.Name)
 }
 
-func (s *BaseSuite) TearDownTest() {
+func (s *BaseSuite) TearDownSuite() {
 	logrus.Infof("%s: Removing builder", s.Name)
 	err := RunBuildkit("rm", []string{
 		s.Name,
@@ -62,7 +62,7 @@ func (s *BaseSuite) TestSimpleBuild() {
 	dir, cleanup, err := NewSimpleBuildContext()
 	defer cleanup()
 	require.NoError(s.T(), err, "Failed to set up temporary build context")
-	args := []string{}
+	args := []string{"--progress=plain"}
 	if s.Name != "buildkit" { // TODO wire up the default name variable
 		args = append(
 			args,
@@ -102,7 +102,7 @@ func (s *BaseSuite) TestLocalOutputTarBuild() {
 	dir, cleanup, err := NewSimpleBuildContext()
 	defer cleanup()
 	require.NoError(s.T(), err, "Failed to set up temporary build context")
-	args := []string{}
+	args := []string{"--progress=plain"}
 	if s.Name != "buildkit" { // TODO wire up the default name variable
 		args = append(
 			args,

@@ -51,6 +51,7 @@ const (
 	// TODO - consider adding other default values here to aid users in fine-tuning by editing the configmap post deployment
 	DefaultConfigFileTemplate = `# Default buildkitd configuration.  Use --config <path/to/file> to override during create
 debug = false
+root = "/var/lib/buildkit/{{ .Name }}"
 [worker.containerd]
   namespace = "{{ .ContainerdNamespace }}"
 `
@@ -103,7 +104,7 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 			}
 		}
 		return sub.Wrap(
-			fmt.Sprintf("waiting for %d pods to be ready", d.minReplicas),
+			fmt.Sprintf("waiting for %d pods to be ready for %s", d.minReplicas, d.deployment.Name),
 			func() error {
 				if err := d.wait(ctx, sub); err != nil {
 					return err
@@ -137,7 +138,7 @@ func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
 	for try := 0; try < 100; try++ {
 		if err == nil {
 			if depl.Status.ReadyReplicas >= int32(d.minReplicas) {
-				sub.Log(1, []byte(fmt.Sprintf("All %d replicas online\n", d.minReplicas)))
+				sub.Log(1, []byte(fmt.Sprintf("All %d replicas for %s online\n", d.minReplicas, d.deployment.Name)))
 				return nil
 			}
 			deploymentUID = string(depl.ObjectMeta.GetUID())
