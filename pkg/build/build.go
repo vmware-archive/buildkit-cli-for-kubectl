@@ -1035,10 +1035,7 @@ func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig 
 		}
 		for _, node := range builder.Nodes {
 			// For containerd, we never have to load on the node where it was built
-			// TODO - this doesn't actually work yet, but when we switch the output.Type to "oci" we need to load it everywhere anyway
-			// if node.Name == chosenNodeName {
-			// 	continue
-			// }
+			// TODO - we may want to filter the source node, but when we switch the output.Type to "oci" we need to load it everywhere anyway
 			nodeNames = append(nodeNames, node.Name)
 		}
 	}
