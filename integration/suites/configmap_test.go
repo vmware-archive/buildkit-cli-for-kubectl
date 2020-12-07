@@ -30,7 +30,7 @@ type configMapSuite struct {
 	configMapClient v1.ConfigMapInterface
 }
 
-func (s *configMapSuite) SetupTest() {
+func (s *configMapSuite) SetupSuite() {
 	var err error
 	s.ClientSet, s.Namespace, err = common.GetKubeClientset()
 	require.NoError(s.T(), err, "%s: kube client failed", s.Name)
@@ -200,7 +200,7 @@ func (s *configMapSuite) TestPreExistingWithCustomCreate() {
 
 func TestConfigMapSuite(t *testing.T) {
 	common.Skipper(t)
-	//t.Parallel() // TODO - tests fail if run in parallel, may be actual race bug
+	t.Parallel()
 	suite.Run(t, &configMapSuite{
 		Name: "configmaptest",
 	})

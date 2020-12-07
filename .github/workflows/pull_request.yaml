@@ -40,7 +40,7 @@ jobs:
     - name: Setup kind cluster
       run: kind create cluster --config ./integration/kind-ci.yaml
     - name: Run integration tests
-      run: make integration EXTRA_GO_TEST_FLAGS=-v
+      run: make integration EXTRA_GO_TEST_FLAGS=-v TEST_PARALLELISM=1
     - name: Gather integration coverage results
       uses: codecov/codecov-action@v1
       with:
@@ -69,7 +69,8 @@ jobs:
         kubectl taint nodes --all node-role.kubernetes.io/master-
         kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
         kubectl wait --for=condition=ready --timeout=30s node --all
-        kubectl get nodes
+        kubectl get nodes -o wide
+        docker version
 
     - name: Run integration tests
       run: make integration EXTRA_GO_TEST_FLAGS=-v

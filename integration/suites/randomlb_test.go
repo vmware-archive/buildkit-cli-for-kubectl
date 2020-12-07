@@ -16,7 +16,7 @@ type RandomLBSuite struct{ common.BaseSuite }
 
 func TestRandomLBSuite(t *testing.T) {
 	common.Skipper(t)
-	//t.Parallel() // TODO - tests fail if run in parallel, may be actual race bug
+	t.Parallel()
 	suite.Run(t, &RandomLBSuite{
 		BaseSuite: common.BaseSuite{
 			Name:        "randomlb",
