@@ -1,7 +1,9 @@
-name: pull-request
+name: pre-and-post-merge
 
 on:
   pull_request:
+    branches: [ main ]
+  push:
     branches: [ main ]
 
 env:
@@ -36,18 +38,7 @@ jobs:
     - uses: actions/checkout@v2
       name: Check out code into the Go module directory
     - name: Setup kind cluster
-      run: |
-        set -x
-        # kind configuration.
-        cat > kind.yaml <<EOF
-        apiVersion: kind.x-k8s.io/v1alpha4
-        kind: Cluster
-        nodes:
-        - role: control-plane
-        - role: worker
-        EOF
-        # Create a cluster!
-        kind create cluster --config kind.yaml
+      run: kind create cluster --config ./integration/kind-ci.yaml
     - name: Run integration tests
       run: make integration EXTRA_GO_TEST_FLAGS=-v
     - name: Gather integration coverage results
