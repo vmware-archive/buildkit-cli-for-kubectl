@@ -581,14 +581,9 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 		multiDriver := len(m[k]) > 1
 		for i, dp := range m[k] {
 			d := drivers[dp.driverIndex].Driver
+			driverName := drivers[dp.driverIndex].Name
 			opt.Platforms = dp.platforms
 
-			// TODO - this is a little messy - some recactoring of this routine would be worthwhile
-			var chosenNodeName string
-			for name := range clients[d.Factory().Name()] {
-				chosenNodeName = name // TODO - this doesn't actually seem to be working!!!
-				break
-			}
 			// TODO - this is also messy and wont work for multi-driver scenarios (no that it's possible yet...)
 			if auth == nil {
 				auth = d.GetAuthWrapper(registrySecretName)
@@ -598,9 +593,9 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 				// Set up loader based on first found type (only 1 supported)
 				for _, entry := range opt.Exports {
 					if entry.Type == "docker" {
-						return newDockerLoader(ctx, d, kubeClientConfig, chosenNodeName, mw)
+						return newDockerLoader(ctx, d, kubeClientConfig, driverName, mw)
 					} else if entry.Type == "oci" {
-						return newContainerdLoader(ctx, d, kubeClientConfig, chosenNodeName, mw)
+						return newContainerdLoader(ctx, d, kubeClientConfig, driverName, mw)
 					}
 				}
 				// TODO - Push scenario?  (or is this a "not reached" scenario now?)
@@ -899,7 +894,7 @@ func notSupported(d driver.Driver, f driver.Feature) error {
 
 type dockerLoadCallback func(name string) (io.WriteCloser, func(), error)
 
-func newDockerLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, chosenNodeName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
+func newDockerLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, builderName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
 	nodeNames := []string{}
 	// TODO this isn't quite right - we need a better "list only pods from one instance" func
 	builders, err := d.List(ctx)
@@ -907,9 +902,15 @@ func newDockerLoader(ctx context.Context, d driver.Driver, kubeClientConfig clie
 		return nil, nil, err
 	}
 	for _, builder := range builders {
+		if builder.Name != builderName {
+			continue
+		}
 		for _, node := range builder.Nodes {
 			nodeNames = append(nodeNames, node.Name)
 		}
+	}
+	if len(nodeNames) == 0 {
+		return nil, nil, fmt.Errorf("no builders found for %s", builderName)
 	}
 	// TODO revamp this flow to return a list of pods
 
@@ -1019,7 +1020,7 @@ func (w *waitingWriter) Close() error {
 	return err
 }
 
-func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, chosenNodeName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
+func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig clientcmd.ClientConfig, builderName string, mw *progress.MultiWriter) (io.WriteCloser, func(), error) {
 	nodeNames := []string{}
 	// TODO this isn't quite right - we need a better "list only pods from one instance" func
 	// TODO revamp this flow to return a list of pods
@@ -1029,12 +1030,12 @@ func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig 
 		return nil, nil, err
 	}
 	for _, builder := range builders {
+		if builder.Name != builderName {
+			continue
+		}
 		for _, node := range builder.Nodes {
 			// For containerd, we never have to load on the node where it was built
-			// TODO - this doesn't actually work yet, but when we switch the output.Type to "oci" we need to load it everywhere anyway
-			if node.Name == chosenNodeName {
-				continue
-			}
+			// TODO - we may want to filter the source node, but when we switch the output.Type to "oci" we need to load it everywhere anyway
 			nodeNames = append(nodeNames, node.Name)
 		}
 	}

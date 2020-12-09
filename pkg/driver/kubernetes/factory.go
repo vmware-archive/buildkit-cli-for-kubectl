@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strconv"
-	"strings"
 	"text/template"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
@@ -243,21 +242,9 @@ func (f *factory) AllowsInstances() bool {
 }
 
 // buildxNameToDeploymentName converts buildx name to Kubernetes Deployment name.
-//
-// eg. "buildx_buildkit_loving_mendeleev0" -> "loving-mendeleev0"
 func buildxNameToDeploymentName(bx string) string {
-	// TODO: commands.util.go should not pass "buildx_buildkit_" prefix to drivers
-	s := bx
-	if strings.HasPrefix(s, "buildx_buildkit_") {
-		s = strings.TrimPrefix(s, "buildx_buildkit_")
-	}
-	s = strings.ReplaceAll(s, "_", "-")
-	if s == "kubernetes" {
-		// Having the default name of the deployment for buildkit called "kubernetes" is confusing, use something better
+	if bx == "" {
 		return "buildkit"
 	}
-	if s == "" {
-		return "buildkit"
-	}
-	return s
+	return bx
 }

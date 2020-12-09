@@ -232,7 +232,7 @@ func runBuild(streams genericclioptions.IOStreams, in buildOptions) error {
 func buildTargets(ctx context.Context, kubeClientConfig clientcmd.ClientConfig, streams genericclioptions.IOStreams, opts map[string]build.Options, progressMode, contextPathHash, registrySecretName, instance string) error {
 	driverName := instance
 	if driverName == "" {
-		driverName = "buildx_buildkit_kubernetes"
+		driverName = "buildkit"
 	}
 	d, err := driver.GetDriver(ctx, driverName, nil, kubeClientConfig, []string{} /* TODO what BuildkitFlags are these? */, "" /* unused config file */, map[string]string{} /* DriverOpts unused */, contextPathHash)
 	if err != nil {
