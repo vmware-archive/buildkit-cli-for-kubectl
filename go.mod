@@ -8,7 +8,7 @@ require (
 	github.com/containerd/containerd v1.4.0-0
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c
-	github.com/gofrs/flock v0.7.1
+	github.com/gofrs/flock v0.7.1 // indirect
 	github.com/google/shlex v0.0.0-20150127133951-6f45313302b9
 	github.com/moby/buildkit v0.7.1
 	github.com/opencontainers/go-digest v1.0.0
@@ -18,10 +18,10 @@ require (
 	github.com/sirupsen/logrus v1.4.2
 	github.com/spf13/cobra v1.0.0
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.4.0
+	github.com/stretchr/testify v1.5.1
 	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e // indirect
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	google.golang.org/grpc v1.27.1
+	google.golang.org/grpc v1.34.0
 	k8s.io/api v0.18.6
 	k8s.io/apimachinery v0.18.6
 	k8s.io/cli-runtime v0.18.6
