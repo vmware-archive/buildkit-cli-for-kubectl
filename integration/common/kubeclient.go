@@ -62,7 +62,9 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 
 	defer func() {
 		err := podClient.Delete(ctx, pod.Name, metav1.DeleteOptions{})
-		logrus.Warnf("failed to clean up pod %s: %s", pod.Name, err)
+		if err != nil {
+			logrus.Warnf("failed to clean up pod %s: %s", pod.Name, err)
+		}
 	}()
 
 	logrus.Infof("waiting for pod to start...")
