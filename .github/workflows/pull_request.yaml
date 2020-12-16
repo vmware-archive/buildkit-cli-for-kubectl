@@ -120,4 +120,16 @@ jobs:
     - uses: actions/checkout@v2
       name: Check out code into the Go module directory
     - name: Build
-      run: make build-ci
+      run: make dist
+    - uses: actions/upload-artifact@v2
+      with:
+        name: darwin.tgz
+        path: bin/darwin.tgz
+    - uses: actions/upload-artifact@v2
+      with:
+        name: linux.tgz
+        path: bin/linux.tgz
+    - uses: actions/upload-artifact@v2
+      with:
+        name: windows.tgz
+        path: bin/windows.tgz
