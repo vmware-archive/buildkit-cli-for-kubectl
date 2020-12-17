@@ -93,4 +93,3 @@ cover.html: cover-int.out cover-unit.out
 .PHONY: lint
 lint:
 	golangci-lint run
-
