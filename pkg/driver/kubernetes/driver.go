@@ -51,7 +51,6 @@ const (
 	// TODO - consider adding other default values here to aid users in fine-tuning by editing the configmap post deployment
 	DefaultConfigFileTemplate = `# Default buildkitd configuration.  Use --config <path/to/file> to override during create
 debug = false
-root = "/var/lib/buildkit/{{ .Name }}"
 [worker.containerd]
   namespace = "{{ .ContainerdNamespace }}"
 `

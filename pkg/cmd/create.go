@@ -41,6 +41,7 @@ type createOptions struct {
 	flags               string
 	configFile          string
 	progress            string
+	customConfig        string
 }
 
 func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *rootOptions) error {
@@ -76,6 +77,7 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 		"containerd-sock":      in.containerdSock,
 		"docker-sock":          in.dockerSock,
 		"runtime":              in.runtime,
+		"custom-config":        in.customConfig,
 	}
 
 	d, err := driver.GetDriver(ctx, in.name, driverFactory, rootOpts.KubeClientConfig, flags, in.configFile, driverOpts, "" /*contextPathHash*/)
@@ -137,6 +139,7 @@ Driver Specific Usage:
 	flags.BoolVar(&options.rootless, "rootless", false, "Run in rootless mode")
 	flags.StringVar(&options.loadbalance, "loadbalance", "random", "Load balancing strategy [random, sticky]")
 	flags.StringVar(&options.worker, "worker", "auto", "Worker backend [auto, runc, containerd]")
+	flags.StringVar(&options.customConfig, "custom-config", "", "Name of a ConfigMap containing custom files (e.g., certs), mounted in /etc/config/ - use 'kubectl create configmap ... --from-file=...'")
 
 	return cmd
 }
