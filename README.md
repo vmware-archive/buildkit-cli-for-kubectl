@@ -122,6 +122,32 @@ You can then build using the registry cache with the command:
 kubectl build -t myimage --cache-to=type=registry,ref=registry:5000/cache --cache-from=type=registry,ref=registry:5000/cache .
 ```
 
+## Custom Certs for Registries
+
+If you happen to run a container image registry with non-standard certs (self signed, or signed by a private CA)
+you can configure buildkitd to trust those certificates.
+
+First load your certs into a ConfigMap:
+```sh
+kubectl create configmap custom-root-certs --from-file=root_ca1.pem --from-file=root_ca2.pem
+```
+
+Then create a `buildkitd.toml` file for your registries where the certs above will be mounted into `/etc/config`
+```
+debug = false
+[worker.containerd]
+  namespace = "k8s.io"
+[registry."myregistry1.acme.local"]
+    ca=["/etc/config/root_ca1.pem"]
+[registry."myregistry2.acme.local:5001"]
+    ca=["/etc/config/root_ca2.pem"]
+```
+
+You can then create a customized builder with
+```
+kubectl buildkit create --custom-config=custom-root-certs --config ./buildkitd.toml
+```
+
 ## Contributing
 
 Check out our [contributing](./CONTRIBUTING.md) for guidance on how to help contribute to the project.

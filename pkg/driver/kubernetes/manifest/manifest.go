@@ -23,6 +23,7 @@ type DeploymentOpt struct {
 	ContainerdSockHostPath string
 	DockerSockHostPath     string
 	ContainerRuntime       string
+	CustomConfig           string
 }
 
 const (
@@ -127,6 +128,11 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 			return nil, err
 		}
 	}
+	if opt.CustomConfig != "" {
+		if err := addCustomConfigMount(d, opt); err != nil {
+			return nil, err
+		}
+	}
 	return d, nil
 }
 
@@ -146,10 +152,12 @@ func toRootless(d *appsv1.Deployment) error {
 
 func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 	labels := labels(opt)
+	buildkitRoot := "/var/lib/buildkit/" + opt.Name
 	d.Spec.Template.Spec.Containers[0].Args = append(
 		d.Spec.Template.Spec.Containers[0].Args,
 		"--oci-worker=false",
 		"--containerd-worker=true",
+		"--root", buildkitRoot,
 	)
 	mountPropagationBidirectional := corev1.MountPropagationBidirectional
 	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
@@ -160,7 +168,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 		},
 		corev1.VolumeMount{
 			Name:             "var-lib-buildkit",
-			MountPath:        "/var/lib/buildkit/" + opt.Name,
+			MountPath:        buildkitRoot,
 			MountPropagation: &mountPropagationBidirectional,
 		},
 		corev1.VolumeMount{
@@ -204,7 +212,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			Name: "var-lib-buildkit",
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/var/lib/buildkit/" + opt.Name,
+					Path: buildkitRoot,
 					Type: &hostPathDirectoryOrCreate,
 				}},
 		},
@@ -301,6 +309,31 @@ func addDockerSockMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			},
 		},
 	}
+
+	return nil
+}
+
+func addCustomConfigMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
+	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+		d.Spec.Template.Spec.Containers[0].VolumeMounts,
+		corev1.VolumeMount{
+			Name:      "custom-config",
+			MountPath: "/etc/config/",
+		},
+	)
+	d.Spec.Template.Spec.Volumes = append(
+		d.Spec.Template.Spec.Volumes,
+		corev1.Volume{
+			Name: "custom-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: opt.CustomConfig,
+					},
+				},
+			},
+		},
+	)
 
 	return nil
 }

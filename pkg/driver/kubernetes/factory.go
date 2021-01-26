@@ -176,6 +176,8 @@ func (d *Driver) initDriverFromConfig() error {
 				return errors.Errorf("invalid runtime %q", v)
 			}
 			deploymentOpt.ContainerRuntime = v
+		case "custom-config":
+			deploymentOpt.CustomConfig = v
 		default:
 			return errors.Errorf("invalid driver option %s for driver %s", k, DriverName)
 		}
