@@ -22,6 +22,7 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -77,6 +78,7 @@ type DriverInfo struct {
 	Driver   driver.Driver
 	Name     string
 	Platform []specs.Platform
+	Nodes    []store.Node
 	Err      error
 }
 
@@ -178,6 +180,7 @@ func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Op
 			availablePlatforms[platforms.Format(p)] = i
 		}
 	}
+	fmt.Printf("XXX avilablePlatforms: %#v\n", availablePlatforms)
 
 	undetectedPlatform := false
 	allPlatforms := map[string]int{}
@@ -281,7 +284,7 @@ func toRepoOnly(in string) (string, error) {
 }
 
 // TODO - this could use some optimization...
-func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Options, dl dockerLoadCallback) (solveOpt *client.SolveOpt, release func(), err error) {
+func toSolveOpt(ctx context.Context, d driver.Driver, multiNodeMultiPlatform bool, opt Options, dl dockerLoadCallback) (solveOpt *client.SolveOpt, release func(), err error) {
 	defers := make([]func(), 0, 2)
 	releaseF := func() {
 		for _, f := range defers {
@@ -296,7 +299,7 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 	}()
 
 	if opt.ImageIDFile != "" {
-		if multiDriver || len(opt.Platforms) != 0 {
+		if multiNodeMultiPlatform || len(opt.Platforms) != 0 {
 			return nil, nil, errors.Errorf("image ID file cannot be specified when building for multiple platforms")
 		}
 		// Avoid leaving a stale file if we eventually fail
@@ -335,9 +338,10 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 		so.FrontendAttrs["source"] = opt.FrontendImage
 	}
 
-	if multiDriver {
+	if multiNodeMultiPlatform {
 		// force creation of manifest list
 		so.FrontendAttrs["multi-platform"] = "true"
+		fmt.Printf("XXX setting solve opt FrontendAttrs[multi-platform]=true\n")
 	}
 
 	switch len(opt.Exports) {
@@ -361,8 +365,10 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 			// having this alternate "runtime" type that's ~inconsistent?
 			if driverFeatures[driver.ContainerdExporter] {
 				opt.Exports[i].Type = "image"
+				fmt.Printf("XXX exports[%d].Type=image\n", i)
 			} else if driverFeatures[driver.DockerExporter] {
 				opt.Exports[i].Type = "docker"
+				fmt.Printf("XXX exports[%d].Type=docker\n", i)
 			} else {
 				// TODO should we allow building without load or push, perhaps a new "nil" or equivalent output type?
 				return nil, nil, errors.Errorf("loading image into cluster runtime not supported by this builder, please specify --push or a client local output: --output=type=local,dest=. --output=type=tar,dest=out.tar ")
@@ -411,6 +417,8 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 			return nil, nil, notSupported(d, driver.OCIExporter)
 		}
 		if e.Type == "docker" {
+			fmt.Printf("XXX export type == docker\n")
+
 			if !driverFeatures[driver.DockerExporter] {
 				return nil, nil, notSupported(d, driver.DockerExporter)
 			}
@@ -465,6 +473,8 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 
 			// If an Output (file) is already specified, let it pass through
 			if e.Output == nil && multiNode {
+				fmt.Printf("XXX no output with multinode\n")
+
 				// TODO - Explore if there's a model to avoid having to transfer to the builder node
 				opt.Exports[i].Type = "oci" // TODO - this most likely means the image isn't saved locally too
 				w, cancel, err := dl("")
@@ -518,6 +528,7 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 
 	// set platforms
 	if len(opt.Platforms) != 0 {
+		fmt.Printf("XXX setting up platforms\n")
 		pp := make([]string, len(opt.Platforms))
 		for i, p := range opt.Platforms {
 			pp[i] = platforms.Format(p)
@@ -548,6 +559,28 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 	return &so, releaseF, nil
 }
 
+func isMultiNodeMultiPlatform(di DriverInfo) bool {
+	if len(di.Nodes) <= 1 {
+		return false
+	}
+	firstNodePlatforms := map[string]interface{}{}
+	for _, platform := range di.Nodes[0].Platforms {
+		firstNodePlatforms[platforms.Format(platform)] = struct{}{}
+	}
+	for i := 1; i < len(di.Nodes); i++ {
+		if len(di.Nodes[i].Platforms) != len(firstNodePlatforms) {
+			return true
+		}
+		for _, platform := range di.Nodes[i].Platforms {
+			_, found := firstNodePlatforms[platforms.Format(platform)]
+			if !found {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, kubeClientConfig clientcmd.ClientConfig, registrySecretName string, pw progress.Writer) (resp map[string]*client.SolveResponse, err error) {
 	if len(drivers) == 0 {
 		return nil, errors.Errorf("driver required for build")
@@ -557,12 +590,14 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 	if err != nil {
 		return nil, errors.Wrapf(err, "no valid drivers found")
 	}
+	fmt.Printf("XXX drivers[%d]: %#v\n", len(drivers), drivers)
 	m, clients, err := resolveDrivers(ctx, drivers, opt, pw)
 	if err != nil {
 		close(pw.Status())
 		<-pw.Done()
 		return nil, err
 	}
+	fmt.Printf("XXX clients[%d] %#v\n", len(clients), clients)
 
 	defers := make([]func(), 0, 2)
 	defer func() {
@@ -578,18 +613,20 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 	mw := progress.NewMultiWriter(pw)
 	eg, ctx := errgroup.WithContext(ctx)
 	for k, opt := range opt {
-		multiDriver := len(m[k]) > 1
 		for i, dp := range m[k] {
+			multiNodeMultiPlatform := isMultiNodeMultiPlatform(drivers[dp.driverIndex])
+			fmt.Printf("XXX in nested loop for opt %#v\n", opt)
 			d := drivers[dp.driverIndex].Driver
 			driverName := drivers[dp.driverIndex].Name
 			opt.Platforms = dp.platforms
+			fmt.Printf("XXX driverName=%s, opt.Platforms=%#v\n", driverName, opt.Platforms)
 
 			// TODO - this is also messy and wont work for multi-driver scenarios (no that it's possible yet...)
 			if auth == nil {
 				auth = d.GetAuthWrapper(registrySecretName)
 				opt.Session = append(opt.Session, d.GetAuthProvider(registrySecretName, os.Stderr))
 			}
-			so, release, err := toSolveOpt(ctx, d, multiDriver, opt, func(arg string) (io.WriteCloser, func(), error) {
+			so, release, err := toSolveOpt(ctx, d, multiNodeMultiPlatform, opt, func(arg string) (io.WriteCloser, func(), error) {
 				// Set up loader based on first found type (only 1 supported)
 				for _, entry := range opt.Exports {
 					if entry.Type == "docker" {
@@ -618,7 +655,6 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 		err := func(k string) error {
 			opt := opt
 			dps := m[k]
-			multiDriver := len(m[k]) > 1
 
 			res := make([]*client.SolveResponse, len(dps))
 			wg := &sync.WaitGroup{}
@@ -704,7 +740,9 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 			for i, dp := range dps {
 				so := *dp.so
 
-				if multiDriver {
+				multiNodeMultiPlatform := isMultiNodeMultiPlatform(drivers[dp.driverIndex])
+
+				if multiNodeMultiPlatform {
 					for i, e := range so.Exports {
 						switch e.Type {
 						case "oci", "tar":
@@ -751,6 +789,14 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 
 					eg.Go(func() error {
 						defer wg.Done()
+						// TODO dump out some info about the workers...
+						workerInfos, err := c.ListWorkers(ctx)
+						fmt.Printf("XXX found %d worker info\n", len(workerInfos))
+						for i, wi := range workerInfos {
+							fmt.Printf("XXX %d: %#v\n", i, wi)
+							// TODO might want to iterate through Platforms
+						}
+
 						rr, err := c.Solve(ctx, nil, so, statusCh)
 						if err != nil {
 							// Try to give a slightly more helpful error message if the use

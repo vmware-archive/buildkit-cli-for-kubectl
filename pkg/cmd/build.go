@@ -238,10 +238,16 @@ func buildTargets(ctx context.Context, kubeClientConfig clientcmd.ClientConfig, 
 	if err != nil {
 		return err
 	}
+	driverInfo, err := d.Info(ctx)
+	if err != nil {
+		return err
+	}
 	dis := []build.DriverInfo{
 		{
-			Name:   driverName,
-			Driver: d,
+			Name:     driverName,
+			Driver:   d,
+			Platform: UniquePlatforms(driverInfo.DynamicNodes),
+			Nodes:    driverInfo.DynamicNodes,
 		},
 	}
 

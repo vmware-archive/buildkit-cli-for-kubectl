@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/client"
+	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
@@ -350,10 +351,38 @@ func (d *Driver) Info(ctx context.Context) (*driver.Info, error) {
 		return nil, err
 	}
 	var dynNodes []store.Node
-	for _, p := range pods {
+	for _, pod := range pods {
+
+		// TODO DRY this out with the driver.Client routine...
+		restClient := d.clientset.CoreV1().RESTClient()
+		restClientConfig, err := d.KubeClientConfig.ClientConfig()
+		if err != nil {
+			return nil, err
+		}
+		containerName := pod.Spec.Containers[0].Name
+		cmd := []string{"buildctl", "dial-stdio"}
+		conn, err := execconn.ExecConn(restClient, restClientConfig,
+			pod.Namespace, pod.Name, containerName, cmd)
+		if err != nil {
+			return nil, err
+		}
+		client, err := client.New(ctx, "", client.WithDialer(func(string, time.Duration) (net.Conn, error) {
+			return conn, nil
+		}))
+		var platforms []specs.Platform
+		workers, err := client.ListWorkers(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if len(workers) == 1 {
+			platforms = workers[0].Platforms
+		} else {
+			return nil, fmt.Errorf("Multi-worker scenario not yet implemented")
+		}
+
 		node := store.Node{
-			Name: p.Name,
-			// Other fields are unset (TODO: detect real platforms)
+			Name:      pod.Name,
+			Platforms: platforms,
 		}
 		dynNodes = append(dynNodes, node)
 	}
