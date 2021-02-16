@@ -98,6 +98,8 @@ kubectl create secret docker-registry mysecret --docker-server='<registry hostna
 kubectl build --push --registry-secret mysecret -t <registry hostname>/<namespace>/<repo>:<tag> -f Dockerfile ./
 ```
 
+Hint: if you're trying to authenticate to Docker Hub, use `https://index.docker.io/v1/` as the `--docker-server`
+
 ### Registry-based Caching
 
 BuildKit is smart about caching prior build results for efficient incremental
