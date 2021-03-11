@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strconv"
-	"strings"
 	"text/template"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
@@ -139,7 +138,9 @@ func (d *Driver) initDriverFromConfig() error {
 			if err != nil {
 				return err
 			}
-			deploymentOpt.Image = bkimage.DefaultRootlessImage
+			if deploymentOpt.Rootless {
+				deploymentOpt.Image = bkimage.DefaultRootlessImage
+			}
 		case "loadbalance":
 			switch v {
 			case LoadbalanceSticky:
@@ -175,6 +176,8 @@ func (d *Driver) initDriverFromConfig() error {
 				return errors.Errorf("invalid runtime %q", v)
 			}
 			deploymentOpt.ContainerRuntime = v
+		case "custom-config":
+			deploymentOpt.CustomConfig = v
 		default:
 			return errors.Errorf("invalid driver option %s for driver %s", k, DriverName)
 		}
@@ -231,8 +234,8 @@ func (d *Driver) initDriverFromConfig() error {
 		//        and make sure things get wired up properly, and/or error out if the
 		//        user tries to set properties that should be in the config file
 		d.configMap = manifest.NewConfigMap(deploymentOpt, data)
+		d.userSpecifiedConfig = true
 	}
-
 	return nil
 }
 
@@ -241,21 +244,9 @@ func (f *factory) AllowsInstances() bool {
 }
 
 // buildxNameToDeploymentName converts buildx name to Kubernetes Deployment name.
-//
-// eg. "buildx_buildkit_loving_mendeleev0" -> "loving-mendeleev0"
 func buildxNameToDeploymentName(bx string) string {
-	// TODO: commands.util.go should not pass "buildx_buildkit_" prefix to drivers
-	s := bx
-	if strings.HasPrefix(s, "buildx_buildkit_") {
-		s = strings.TrimPrefix(s, "buildx_buildkit_")
-	}
-	s = strings.ReplaceAll(s, "_", "-")
-	if s == "kubernetes" {
-		// Having the default name of the deployment for buildkit called "kubernetes" is confusing, use something better
+	if bx == "" {
 		return "buildkit"
 	}
-	if s == "" {
-		return "buildkit"
-	}
-	return s
+	return bx
 }

@@ -1,0 +1,8 @@
+# kind configuration for CI
+# Usage:
+#   kind create cluster --config ./integration/kind-ci.yaml
+apiVersion: kind.x-k8s.io/v1alpha4
+kind: Cluster
+nodes:
+- role: control-plane
+- role: worker

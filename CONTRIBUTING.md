@@ -35,6 +35,12 @@ Assuming you have a valid kube configuration pointed at a cluster, you can run t
 make integration
 ```
 
+If you want to run a single suite of tests while working on a specific area of the tests or main code, use something like this:
+```
+make integration EXTRA_GO_TEST_FLAGS="-run TestConfigMapSuite -v"
+```
+Hint: find the current test suites with `grep "func Test" integration/suites/*.go`
+
 To check your code for **lint/style consistency**, run
 ```
 make lint
@@ -76,4 +82,4 @@ When you submit a pull request, our CI system will exercise both of these types 
 
 ## Connecting with other Contributors
 
-We're just getting started.  For the moment, the main communication channel is through **XXX (insert link to google group here once created)**.  Over time we'll add more channels and update this doc accordingly.
+We're just getting started.  For the moment, the main communication channel is through buildkit-cli-for-kubectl@googlegroups.com which you can subscribe to at https://groups.google.com/g/buildkit-cli-for-kubectl  Over time we'll add more channels and update this doc accordingly.

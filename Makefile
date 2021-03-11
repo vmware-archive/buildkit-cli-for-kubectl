@@ -3,6 +3,8 @@
 
 VERSION?=$(shell git describe --tags --first-parent --abbrev=7 --long --dirty --always)
 TEST_KUBECONFIG?=$(HOME)/.kube/config
+TEST_TIMEOUT=600s
+TEST_PARALLELISM=3
 
 # Verify Go in PATH
 ifeq (, $(shell which go))
@@ -16,7 +18,11 @@ NATIVE_ARCH=$(shell uname | tr A-Z a-z)
 GOARCH=amd64
 export GOARCH
 CI_OSES=linux darwin windows
-CI_BUILD_TARGETS=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os)/kubectl-buildkit $(BIN_DIR)/$(os)/kubectl-build)
+CI_BUILD_TARGETS=$(foreach os,$(CI_OSES),\
+	$(if $(filter windows,$(os)),\
+		$(BIN_DIR)/$(os)/kubectl-buildkit.exe $(BIN_DIR)/$(os)/kubectl-build.exe,\
+		$(BIN_DIR)/$(os)/kubectl-buildkit $(BIN_DIR)/$(os)/kubectl-build) \
+	)
 CI_ARCHIVES=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os).tgz)
 
 GO_MOD_NAME=github.com/vmware-tanzu/buildkit-cli-for-kubectl
@@ -32,15 +38,15 @@ help:
 
 .PHONY: clean
 clean:
-	-rm -rf $(BIN_DIR) cover*.out cover.html
+	-rm -rf $(BIN_DIR) cover*.out cover*.html
 
 .PHONY: build
 build: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
 
-$(BIN_DIR)/%/kubectl-buildkit: $(GO_DEPS)
+$(BIN_DIR)/%/kubectl-buildkit $(BIN_DIR)/%/kubectl-buildkit.exe: $(GO_DEPS)
 	GOOS=$* go build $(GO_FLAGS) -o $@ ./cmd/kubectl-buildkit
 
-$(BIN_DIR)/%/kubectl-build: $(GO_DEPS)
+$(BIN_DIR)/%/kubectl-build $(BIN_DIR)/%/kubectl-build.exe: $(GO_DEPS)
 	GOOS=$* go build $(GO_FLAGS) -o $@  ./cmd/kubectl-build
 
 install: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
@@ -53,10 +59,10 @@ print-%:
 build-ci: $(CI_BUILD_TARGETS)
 
 .PHONY: dist
-dist: $(CI_ARCHIVES)
+dist: $(CI_BUILD_TARGETS) $(CI_ARCHIVES)
 
-$(BIN_DIR)/%.tgz: $(BIN_DIR)/%/kubectl-buildkit $(BIN_DIR)/%/kubectl-build
-	cd $(BIN_DIR)/$* && tar -czvf ../$*.tgz kubectl-buildkit kubectl-build
+$(BIN_DIR)/%.tgz: $(BIN_DIR)/%/*
+	cd $(BIN_DIR)/$* && tar -czvf ../$*.tgz kubectl-*
 
 .PHONY: test
 test:
@@ -66,7 +72,9 @@ test:
 integration:
 	@echo "Running integration tests with $(TEST_KUBECONFIG)"
 	@kubectl config get-contexts
-	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test $(GO_FLAGS) $(EXTRA_GO_TEST_FLAGS)  \
+	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test -timeout $(TEST_TIMEOUT) $(GO_FLAGS) \
+		-parallel $(TEST_PARALLELISM) \
+		$(EXTRA_GO_TEST_FLAGS)  \
 		$(GO_COVER_FLAGS) -coverprofile=./cover-int.out \
 		./integration/...
 
@@ -85,4 +93,3 @@ cover.html: cover-int.out cover-unit.out
 .PHONY: lint
 lint:
 	golangci-lint run
-

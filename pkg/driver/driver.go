@@ -6,6 +6,8 @@ import (
 	"context"
 	"io"
 	"net"
+	"strings"
+	"time"
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -32,6 +34,8 @@ const (
 	Stopping
 	Stopped
 )
+
+const maxBootRetries = 3
 
 func (s Status) String() string {
 	switch s {
@@ -98,21 +102,26 @@ func Boot(ctx context.Context, d Driver, pw progress.Writer) (*client.Client, st
 		}
 		try++
 		if info.Status != Running {
-			if try > 2 {
+			if try > maxBootRetries {
 				return nil, "", errors.Errorf("failed to bootstrap %T driver in attempts", d)
 			}
 			if err := d.Bootstrap(ctx, func(s *client.SolveStatus) {
 				if pw != nil {
 					pw.Status() <- s
 				}
-			}); err != nil {
+			}); err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "not found")) {
+				// This most likely means another build is running in parallel
+				// Give it just enough time to finish creating resources then retry
+				time.Sleep(250 * time.Millisecond)
+				continue
+			} else if err != nil {
 				return nil, "", err
 			}
 		}
 
 		c, chosenNodeName, err := d.Client(ctx)
 		if err != nil {
-			if errors.Cause(err) == ErrNotRunning && try <= 2 {
+			if errors.Cause(err) == ErrNotRunning && try <= maxBootRetries {
 				continue
 			}
 			return nil, "", err

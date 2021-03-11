@@ -22,6 +22,7 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	clientappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
@@ -48,7 +49,8 @@ const (
 	DefaultContainerRuntime = "docker" // Temporary since most kubernetes clusters are still Docker based today...
 
 	// TODO - consider adding other default values here to aid users in fine-tuning by editing the configmap post deployment
-	DefaultConfigFileTemplate = `debug = false
+	DefaultConfigFileTemplate = `# Default buildkitd configuration.  Use --config <path/to/file> to override during create
+debug = false
 [worker.containerd]
   namespace = "{{ .ContainerdNamespace }}"
 `
@@ -69,6 +71,7 @@ type Driver struct {
 	podChooser           podchooser.PodChooser
 	eventClient          clientcorev1.EventInterface
 	userSpecifiedRuntime bool
+	userSpecifiedConfig  bool
 	namespace            string
 	loadbalance          string
 	authHintMessage      string
@@ -76,14 +79,21 @@ type Driver struct {
 
 func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 	return progress.Wrap("[internal] booting buildkit", l, func(sub progress.SubLogger) error {
-
 		_, err := d.configMapClient.Get(ctx, d.configMap.Name, metav1.GetOptions{})
-		if err != nil {
+
+		if err != nil && kubeerrors.IsNotFound(err) {
+			// Doesn't exist, create it
 			_, err = d.configMapClient.Create(ctx, d.configMap, metav1.CreateOptions{})
-			if err != nil {
-				return errors.Wrapf(err, "error while calling configMap.Create for %q", d.configMap.Name)
-			}
+		} else if err != nil {
+			return errors.Wrapf(err, "configmap get error for %q", d.configMap.Name)
+		} else if d.userSpecifiedConfig {
+			// err was nil, thus it already exists, and user passed a new config, so update it
+			_, err = d.configMapClient.Update(ctx, d.configMap, metav1.UpdateOptions{})
 		}
+		if err != nil {
+			return errors.Wrapf(err, "configmap error for buildkitd.toml for %q", d.configMap.Name)
+		}
+
 		_, err = d.deploymentClient.Get(ctx, d.deployment.Name, metav1.GetOptions{})
 		if err != nil {
 			// TODO: return err if err != ErrNotFound
@@ -93,7 +103,7 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 			}
 		}
 		return sub.Wrap(
-			fmt.Sprintf("waiting for %d pods to be ready", d.minReplicas),
+			fmt.Sprintf("waiting for %d pods to be ready for %s", d.minReplicas, d.deployment.Name),
 			func() error {
 				if err := d.wait(ctx, sub); err != nil {
 					return err
@@ -127,7 +137,7 @@ func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
 	for try := 0; try < 100; try++ {
 		if err == nil {
 			if depl.Status.ReadyReplicas >= int32(d.minReplicas) {
-				sub.Log(1, []byte(fmt.Sprintf("All %d replicas online\n", d.minReplicas)))
+				sub.Log(1, []byte(fmt.Sprintf("All %d replicas for %s online\n", d.minReplicas, d.deployment.Name)))
 				return nil
 			}
 			deploymentUID = string(depl.ObjectMeta.GetUID())
@@ -262,15 +272,16 @@ func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
 
 						sub.Log(1, []byte(fmt.Sprintf("WARN: initial attempt to deploy configured for the %s runtime failed, retrying with %s\n", attemptedRuntime, runtime)))
 						d.InitConfig.DriverOpts["runtime"] = runtime
+						d.InitConfig.DriverOpts["worker"] = "auto"
 						err = d.initDriverFromConfig() // This will toggle userSpecifiedRuntime to true to prevent cycles
 						if err != nil {
 							return err
 						}
-						// Instead of updating, we'll just delete and re-create
-						err = d.Rm(ctx, true)
-						if err != nil {
-							return err
+						// Instead of updating, we'll just delete the deployment and re-create
+						if err := d.deploymentClient.Delete(ctx, d.deployment.Name, metav1.DeleteOptions{}); err != nil {
+							return errors.Wrapf(err, "error while calling deploymentClient.Delete for %q", d.deployment.Name)
 						}
+
 						// Wait for the pods to wind down before re-deploying...
 						for ; try < 100; try++ {
 							remainingPods := 0
@@ -359,6 +370,10 @@ func (d *Driver) Stop(ctx context.Context, force bool) error {
 func (d *Driver) Rm(ctx context.Context, force bool) error {
 	if err := d.deploymentClient.Delete(ctx, d.deployment.Name, metav1.DeleteOptions{}); err != nil {
 		return errors.Wrapf(err, "error while calling deploymentClient.Delete for %q", d.deployment.Name)
+	}
+	// TODO - consider checking for our expected labels and preserve pre-existing ConfigMaps
+	if err := d.configMapClient.Delete(ctx, d.configMap.Name, metav1.DeleteOptions{}); err != nil {
+		return errors.Wrapf(err, "error while calling configMapClient.Delete for %q", d.configMap.Name)
 	}
 	return nil
 }

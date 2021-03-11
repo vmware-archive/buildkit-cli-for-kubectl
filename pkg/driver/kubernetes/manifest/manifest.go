@@ -23,11 +23,12 @@ type DeploymentOpt struct {
 	ContainerdSockHostPath string
 	DockerSockHostPath     string
 	ContainerRuntime       string
+	CustomConfig           string
 }
 
 const (
 	containerName = "buildkitd"
-	AnnotationKey = "buildkit.org/builder"
+	AnnotationKey = "buildkit.mobyproject.org/builder"
 )
 
 func labels(opt *DeploymentOpt) map[string]string {
@@ -127,6 +128,11 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 			return nil, err
 		}
 	}
+	if opt.CustomConfig != "" {
+		if err := addCustomConfigMount(d, opt); err != nil {
+			return nil, err
+		}
+	}
 	return d, nil
 }
 
@@ -146,10 +152,12 @@ func toRootless(d *appsv1.Deployment) error {
 
 func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 	labels := labels(opt)
+	buildkitRoot := "/var/lib/buildkit/" + opt.Name
 	d.Spec.Template.Spec.Containers[0].Args = append(
 		d.Spec.Template.Spec.Containers[0].Args,
 		"--oci-worker=false",
 		"--containerd-worker=true",
+		"--root", buildkitRoot,
 	)
 	mountPropagationBidirectional := corev1.MountPropagationBidirectional
 	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
@@ -160,7 +168,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 		},
 		corev1.VolumeMount{
 			Name:             "var-lib-buildkit",
-			MountPath:        "/var/lib/buildkit",
+			MountPath:        buildkitRoot,
 			MountPropagation: &mountPropagationBidirectional,
 		},
 		corev1.VolumeMount{
@@ -204,7 +212,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			Name: "var-lib-buildkit",
 			VolumeSource: corev1.VolumeSource{
 				HostPath: &corev1.HostPathVolumeSource{
-					Path: "/var/lib/buildkit",
+					Path: buildkitRoot,
 					Type: &hostPathDirectoryOrCreate,
 				}},
 		},
@@ -246,10 +254,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 		},
 	)
 
-	// If this is a multi-user cluster and other users are running
-	// containerd based builders in other namespaces, we'll fail to start due to
-	// shared mounts for the buildkit cache
-	// buildkitd: could not lock /var/lib/buildkit/buildkitd.lock, another instance running?
+	// Spread our builders out on a multi-node cluster
 	d.Spec.Template.Spec.Affinity = &corev1.Affinity{
 		PodAntiAffinity: &corev1.PodAntiAffinity{
 			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
@@ -267,6 +272,7 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 }
 
 func addDockerSockMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
+	labels := labels(opt)
 	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
 		d.Spec.Template.Spec.Containers[0].VolumeMounts,
 		corev1.VolumeMount{
@@ -287,6 +293,48 @@ func addDockerSockMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			},
 		},
 	)
+
+	// If we're using the dockerd socket to make images available
+	// on the nodes, we want to distribute the workers across the cluster
+	// and not let them clump together on a single node
+	d.Spec.Template.Spec.Affinity = &corev1.Affinity{
+		PodAntiAffinity: &corev1.PodAntiAffinity{
+			RequiredDuringSchedulingIgnoredDuringExecution: []corev1.PodAffinityTerm{
+				{
+					LabelSelector: &metav1.LabelSelector{
+						MatchLabels: labels,
+					},
+					TopologyKey: "kubernetes.io/hostname",
+				},
+			},
+		},
+	}
+
+	return nil
+}
+
+func addCustomConfigMount(d *appsv1.Deployment, opt *DeploymentOpt) error {
+	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
+		d.Spec.Template.Spec.Containers[0].VolumeMounts,
+		corev1.VolumeMount{
+			Name:      "custom-config",
+			MountPath: "/etc/config/",
+		},
+	)
+	d.Spec.Template.Spec.Volumes = append(
+		d.Spec.Template.Spec.Volumes,
+		corev1.Volume{
+			Name: "custom-config",
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
+						Name: opt.CustomConfig,
+					},
+				},
+			},
+		},
+	)
+
 	return nil
 }
 
