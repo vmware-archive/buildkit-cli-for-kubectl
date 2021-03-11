@@ -60,6 +60,11 @@ build-ci: $(CI_BUILD_TARGETS)
 
 .PHONY: dist
 dist: $(CI_BUILD_TARGETS) $(CI_ARCHIVES)
+	sed -e "s~%%VERSION%%~$(VERSION)~g" \
+		-e "s~%%DARWIN_HASH%%~$$(shasum --algorithm 256 ./bin/darwin.tgz)~g" \
+		-e "s~%%LINUX_HASH%%~$$(shasum --algorithm 256 ./bin/linux.tgz)~g" \
+		-e "s~%%WINDOWS_HASH%%~$$(shasum --algorithm 256 ./bin/windows.tgz)~g" \
+		./buildkit-cli.yaml.tmpl > ./bin/buildkit-cli.yaml
 
 $(BIN_DIR)/%.tgz: $(BIN_DIR)/%/*
 	cd $(BIN_DIR)/$* && tar -czvf ../$*.tgz kubectl-*
