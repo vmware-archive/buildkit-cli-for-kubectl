@@ -67,3 +67,6 @@ jobs:
         asset_path: ./bin/windows.tgz
         asset_name: windows-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
+    
+    - name: Update new version in krew-index
+      uses: rajatjindal/krew-release-bot@v0.0.38

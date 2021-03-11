@@ -1,0 +1,32 @@
+apiVersion: krew.googlecontainertools.github.com/v1alpha2
+kind: Plugin
+metadata:
+  name: build
+spec:
+  version: {{ .TagName }}
+  homepage: https://github.com/vmware-tanzu/buildkit-cli-for-kubectl
+  shortDescription: Build OCI and Docker images with your kubernetes cluster
+  description: |
+    BuildKit CLI for kubectl is a tool for building OCI and Docker images 
+    with your kubernetes cluster. It replaces the `docker build` command 
+    to let you quickly and easily build your single and 
+    multi-architecture container images.
+  platforms:
+  - selector:
+      matchLabels:
+        os: darwin
+        arch: amd64
+         {{addURIAndSha "https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases/download/{{ .TagName }}/darwin-refs.tags.{{ .TagName }}.tgz" }}
+    bin: kubectl-build
+  - selector:
+      matchLabels:
+        os: linux
+        arch: amd64
+    {{addURIAndSha https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases/download/{{ .TagName }}/linux-refs.tags.{{ .TagName }}.tgz
+    bin: kubectl-build
+  - selector:
+      matchLabels:
+        os: windows
+        arch: amd64
+    {{addURIAndSha https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases/download/{{ .TagName }}/windows-refs.tags.{{ .TagName }}.tgz
+    bin: kubectl-build.exe
