@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/sirupsen/logrus"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/integration/common"
@@ -79,7 +80,7 @@ func (s *parallelDefaultSuite) TestParallelDefaultBuilds() {
 	}
 	wg.Wait()
 	for i := 0; i < ParallelDefaultBuildCount; i++ {
-		require.NoError(s.T(), errors[i], "build/run %d failed", i)
+		assert.NoError(s.T(), errors[i], "build/run %d failed", i)
 	}
 }
 

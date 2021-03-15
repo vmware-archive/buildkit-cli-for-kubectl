@@ -37,6 +37,7 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 	podClient := clientset.CoreV1().Pods(namespace)
 	eventClient := clientset.CoreV1().Events(namespace)
 	logrus.Infof("starting pod %s for image: %s", name, imageName)
+	gracePeriod := int64(0) // Speed up the shutdown at the end
 	// Start the pod
 	pod, err := podClient.Create(ctx,
 		&v1.Pod{
@@ -53,6 +54,7 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 						ImagePullPolicy: v1.PullNever,
 					},
 				},
+				TerminationGracePeriodSeconds: &gracePeriod,
 			},
 		},
 		metav1.CreateOptions{},

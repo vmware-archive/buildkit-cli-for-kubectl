@@ -399,7 +399,8 @@ func main() {
 		"--builder", s.Name,
 		"--push",
 		"--tag", imageName,
-		"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		//"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		"--platform", "linux/amd64,linux/arm/v7,linux/arm64", // Shorter list...
 		dir,
 	}
 	err = common.RunBuild(args)
