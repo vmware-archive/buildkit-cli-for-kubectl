@@ -11,6 +11,10 @@ env:
 jobs:
   build:
     runs-on: ubuntu-18.04
+    outputs:
+      VERSION: ${{ steps.get_version.outputs.VERSION }}
+      RAW_VERSION: ${{ steps.get_version.outputs.RAW_VERSION }}
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
     - name: Get the target release version
       id: get_version
@@ -118,12 +122,40 @@ jobs:
         asset_name: darwin-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
 
-    - name: Upload windows tgz
+    - name: Stage windows binary
+      uses: actions/upload-artifact@v2
+      with:
+        name: windows.tgz
+        path: bin/windows.tgz
+        retention-days: 1
+
+  winpkg:
+    runs-on: windows-latest
+    needs: "build"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Retrieve built windows.tgz
+      uses: actions/download-artifact@v2
+      with:
+        name: windows.tgz
+        path: packaging/windows/tools/
+    - name: Prep for packaging
+      run: |
+        mkdir packaging/windows/legal
+        cp LICENSE packaging/windows/legal/LICENSE.txt
+        mv packaging/windows/tools/windows.tgz packaging/windows/tools/kubectl-buildkit-${{ steps.get_version.outputs.RAW_VERSION }}.tar.gz
+    - name: Choco Package
+      uses: crazy-max/ghaction-chocolatey@v1
+      with:
+        args: pack --version ${{ needs.build.outputs.RAW_VERSION }} packaging/windows/kubectl-buildkit.nuspec
+
+    - name: Upload windows Package
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./bin/windows.tgz
-        asset_name: windows-${{ steps.get_version.outputs.VERSION }}.tgz
-        asset_content_type: application/tar+gzip
+        upload_url: ${{ needs.build.outputs.upload_url }}
+        asset_path: kubectl-buildkit.${{ needs.build.outputs.RAW_VERSION }}.nupkg
+        asset_name: kubectl-buildkit.${{ needs.build.outputs.RAW_VERSION }}.nupkg
+        asset_content_type: application/zip

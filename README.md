@@ -55,6 +55,20 @@ documentation for more information.
 
 ## Getting started
 
+### Installing on Windows
+
+We produce [Choco](https://docs.chocolatey.org/) compatible packages in our https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases
+Just download the latest `nupkg` artifact and in a PowerShell Admin terminal, run
+```
+choco install .\kubectl-buildkit*.nupkg
+```
+
+Note: if you haven't already done so, you will need to run `choco install kubernetes-cli` once to get `kubectl` installed.
+### Installing on Linux
+
+We also produce `.deb` and `.rpm` packages which should work for most distros in our https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases
+Just download the latest artifact and use `yum install ./kubectl-buildkit*.rpm` or `apt install ./kubectl-buildkit*.deb`
+
 ### Installing the tarball
 
 Head over to https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases and download the `tgz` asset for your platform.

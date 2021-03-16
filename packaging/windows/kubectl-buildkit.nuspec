@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Do not remove this test for UTF-8: if “Ω” doesn’t appear as greek uppercase omega letter enclosed in quotation marks, you should use an editor that supports UTF-8, not this one. -->
+<package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
+  <metadata>
+    <id>kubectl-buildkit</id>
+    <version>$version$</version>
+    <packageSourceUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl</packageSourceUrl>
+    <owners>BuildKit CLI for kubectl maintainers</owners>
+    <title>BuildKit CLI for kubectl</title>
+    <authors>BuildKit CLI for kubectl maintainers</authors>
+    <projectUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl</projectUrl>
+    <copyright>(c) 2021 VMware Inc.</copyright>
+    <licenseUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/blob/main/LICENSE</licenseUrl>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <projectSourceUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl</projectSourceUrl>
+    <docsUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl</docsUrl>
+    <bugTrackerUrl>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/issues</bugTrackerUrl>
+    <tags>kubernetes kubectl buildkit containers devops cli foss</tags>
+    <summary>BuildKit CLI for kubectl is a tool for building container images with your Kubernetes cluster</summary>
+    <description><![CDATA[## BuildKit CLI for kubectl
+
+BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.
+It replaces the `docker build` command to let you quickly and easily build your single and
+multi-architecture container images.
+
+## Features
+
+### Drop in replacement for `docker build`
+
+The BuildKit CLI for kubectl replaces the `docker build` command with `kubectl build` to build
+images in your kubernetes cluster, instead of on a single node. Your Dockerfile will be parsed
+the same way as with the existing `docker build` command, and build flags should feel almost
+the same.
+
+### Uses containerd or docker runtime environments
+
+Regardless of whether your Kubernetes cluster is using pure [containerd](https://containerd.io) or
+[docker](https://docker.com), the builder will be able to build OCI compatible images. These
+images can be used inside of your cluster, or pushed to an image registry for distribution.
+]]></description>
+    <releaseNotes>https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases/tag/$version$</releaseNotes>
+    <dependencies>
+      <dependency id="kubernetes-cli" version="0.17.7"/>
+    </dependencies>
+  </metadata>
+  <files>
+    <file src="tools\**" target="tools" />
+    <file src="legal\**" target="legal" />
+  </files>
+</package>
