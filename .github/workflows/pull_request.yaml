@@ -11,7 +11,7 @@ env:
 
 jobs:
   test-unit:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -29,7 +29,7 @@ jobs:
         name: codecov-unit-test
 
   test-integration-containerd:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -64,7 +64,7 @@ jobs:
         name: codecov-integration-test-containerd
 
   test-integration-dockerd:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -97,7 +97,7 @@ jobs:
         name: codecov-integration-test-dockerd
 
   lint:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -111,7 +111,7 @@ jobs:
         version: v1.29
 
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
