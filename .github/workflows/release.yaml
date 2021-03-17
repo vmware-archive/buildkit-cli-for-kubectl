@@ -10,12 +10,20 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-18.04
     steps:
     - name: Get the target release version
       id: get_version
-      run: echo ::set-output name=VERSION::${GITHUB_REF/refs\/tags\//}
-
+      # ver has leading "v"
+      # raw_ver strips the leading "v"
+      # RPM versions need sem-ver prerelease "-" switched to "~" to be valid version strings
+      run: |
+        ver=${GITHUB_REF/refs\/tags\//}
+        raw_ver=${ver#v}
+        echo ::set-output name=VERSION::${ver}
+        echo ::set-output name=RAW_VERSION::${raw_ver}
+        echo ::set-output name=RPM_VERSION::${ver/-/\~}
+        echo ::set-output name=RPM_RAW_VERSION::${raw_ver/-/\~}
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
       with:
@@ -38,7 +46,59 @@ jobs:
         draft: true
         prerelease: true
 
-    - name: Upload linux
+    - name: Set up for rpm and deb packaging
+      run: |
+        mkdir -p .debpkg/usr/bin
+        cp bin/linux/kubectl* .debpkg/usr/bin/
+        mkdir -p .rpmpkg/usr/bin
+        cp bin/linux/kubectl* .rpmpkg/usr/bin/
+
+    - uses: jiro4989/build-deb-action@v2
+      name: Create deb package
+      with:
+        package: kubectl-buildkit
+        package_root: .debpkg
+        maintainer: BuildKit CLI for kubectl maintainers
+        version: ${{ steps.get_version.outputs.VERSION }}
+        arch: 'amd64'
+        desc: 'BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.'
+
+    - uses: jiro4989/build-rpm-action@v2
+      name: Create rpm package
+      with:
+        summary: 'BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.'
+        package: kubectl-buildkit
+        package_root: .rpmpkg
+        maintainer: BuildKit CLI for kubectl maintainers
+        version: ${{ steps.get_version.outputs.RPM_VERSION }}
+        arch: 'x86_64'
+        desc: 'BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.'
+
+    - name: List built packages
+      run: |
+        ls *.deb *.rpm
+
+    - name: Upload deb
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: kubectl-buildkit_${{ steps.get_version.outputs.RAW_VERSION }}_amd64.deb
+        asset_name: kubectl-buildkit_${{ steps.get_version.outputs.RAW_VERSION }}_amd64.deb
+        asset_content_type: application/vnd.debian.binary-package
+
+    - name: Upload rpm
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: kubectl-buildkit-${{ steps.get_version.outputs.RPM_RAW_VERSION }}-1.el7.x86_64.rpm
+        asset_name: kubectl-buildkit-${{ steps.get_version.outputs.RPM_RAW_VERSION }}-1.el7.x86_64.rpm
+        asset_content_type: application/x-redhat-package-manager
+
+    - name: Upload linux tgz
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,7 +108,7 @@ jobs:
         asset_name: linux-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
 
-    - name: Upload macos
+    - name: Upload macos tgz
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +118,7 @@ jobs:
         asset_name: darwin-${{ steps.get_version.outputs.VERSION }}.tgz
         asset_content_type: application/tar+gzip
 
-    - name: Upload windows
+    - name: Upload windows tgz
       uses: actions/upload-release-asset@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
