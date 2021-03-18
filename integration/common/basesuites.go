@@ -45,6 +45,7 @@ func (s *BaseSuite) SetupSuite() {
 }
 
 func (s *BaseSuite) TearDownSuite() {
+	LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 	logrus.Infof("%s: Removing builder", s.Name)
 	err := RunBuildkit("rm", []string{
 		s.Name,

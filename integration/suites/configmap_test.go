@@ -74,6 +74,7 @@ func (s *configMapSuite) TestDefaultCreate() {
 	require.Contains(s.T(), string(data), "Default buildkitd configuration.")
 
 	// Tear down the builder
+	common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 	logrus.Infof("%s: Removing builder", s.Name)
 	err = common.RunBuildkit("rm", []string{
 		s.Name,
@@ -107,6 +108,7 @@ func (s *configMapSuite) TestPreExistingConfigDefaultCreate() {
 	require.NotContains(s.T(), string(data), "Default buildkitd configuration.")
 
 	// Tear down the builder
+	common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 	logrus.Infof("%s: Removing builder", s.Name)
 	err = common.RunBuildkit("rm", []string{
 		s.Name,
@@ -146,6 +148,7 @@ func (s *configMapSuite) TestCustomCreate() {
 	require.Contains(s.T(), string(data), "Custom config file", string(data))
 
 	// Tear down the builder
+	common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 	logrus.Infof("%s: Removing builder", s.Name)
 	err = common.RunBuildkit("rm", []string{
 		s.Name,
@@ -188,6 +191,7 @@ func (s *configMapSuite) TestPreExistingWithCustomCreate() {
 	require.Contains(s.T(), string(data), "Custom config file", string(data))
 
 	// Tear down the builder
+	common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 	logrus.Infof("%s: Removing builder", s.Name)
 	err = common.RunBuildkit("rm", []string{
 		s.Name,

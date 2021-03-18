@@ -263,6 +263,7 @@ func (s *localRegistrySuite) TearDownSuite() {
 			logrus.Warnf("failed to clean up registry secret %s: %s", s.configMapName, err)
 		}
 
+		common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 		logrus.Infof("%s: Removing builder", s.Name)
 		err = common.RunBuildkit("rm", []string{
 			s.Name,

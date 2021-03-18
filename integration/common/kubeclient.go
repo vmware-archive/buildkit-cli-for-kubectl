@@ -5,6 +5,7 @@ package common
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/sirupsen/logrus"
@@ -139,5 +140,45 @@ func GetRuntime(ctx context.Context, clientset *kubernetes.Clientset) (string, e
 		return nodes.Items[0].Status.NodeInfo.ContainerRuntimeVersion, nil
 	}
 	return "", fmt.Errorf("unable to retrieve node runtimes")
+
+}
+
+// LogBuilderLogs attempts to replay the log messages from the builder(s)
+func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) {
+	podClient := clientset.CoreV1().Pods(namespace)
+	labelSelector := &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"app": name,
+		},
+	}
+	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
+	if err != nil {
+		logrus.Errorf("should not happen: %s", err)
+		return
+	}
+	listOpts := metav1.ListOptions{
+		LabelSelector: selector.String(),
+	}
+	podList, err := podClient.List(ctx, listOpts)
+	if err != nil {
+		logrus.Warnf("failed to get builder pods for logging: %s", err)
+		return
+	}
+	logrus.Infof("Detected %d pods for builder %s - gathering logs", len(podList.Items), name)
+	logrus.Infof("--- BEGIN BUILDER LOGS ---")
+
+	for _, pod := range podList.Items {
+		logrus.Infof("%s labels %#v", pod.Name, pod.Labels)
+		req := podClient.GetLogs(pod.Name, &v1.PodLogOptions{})
+		buf, err := req.DoRaw(ctx)
+		if err != nil {
+			logrus.Errorf("failed to get logs for %s: %s", pod.Name, err)
+		}
+		for _, line := range strings.Split(string(buf), "\n") {
+			// Don't use logrus since that results in double levels and conflicting timestamps
+			fmt.Printf("pod=\"%s\" %s\n", pod.Name, line)
+		}
+	}
+	logrus.Infof("--- END BUILDER LOGS ---")
 
 }
