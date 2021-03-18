@@ -273,7 +273,10 @@ func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
 
 						sub.Log(1, []byte(fmt.Sprintf("WARN: initial attempt to deploy configured for the %s runtime failed, retrying with %s\n", attemptedRuntime, runtime)))
 						d.InitConfig.DriverOpts["runtime"] = runtime
-						d.InitConfig.DriverOpts["worker"] = "auto"
+						// Leave the users initial intent on worker configuration
+						if d.InitConfig.DriverOpts["worker"] == "" {
+							d.InitConfig.DriverOpts["worker"] = "auto"
+						}
 						err = d.initDriverFromConfig() // This will toggle userSpecifiedRuntime to true to prevent cycles
 						if err != nil {
 							return err
