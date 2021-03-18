@@ -125,11 +125,14 @@ jobs:
       with:
         name: darwin.tgz
         path: bin/darwin.tgz
+        retention-days: 1
     - uses: actions/upload-artifact@v2
       with:
         name: linux.tgz
         path: bin/linux.tgz
+        retention-days: 1
     - uses: actions/upload-artifact@v2
       with:
         name: windows.tgz
         path: bin/windows.tgz
+        retention-days: 1
