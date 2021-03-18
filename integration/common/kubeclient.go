@@ -126,3 +126,18 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 	}
 	return fmt.Errorf("pod never started")
 }
+
+// GetRuntime will return the runtime detected in the cluster
+// Assumes a common runtime (first node found is returned)
+func GetRuntime(ctx context.Context, clientset *kubernetes.Clientset) (string, error) {
+	nodeClient := clientset.CoreV1().Nodes()
+	nodes, err := nodeClient.List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return "", err
+	}
+	if len(nodes.Items) > 0 {
+		return nodes.Items[0].Status.NodeInfo.ContainerRuntimeVersion, nil
+	}
+	return "", fmt.Errorf("unable to retrieve node runtimes")
+
+}

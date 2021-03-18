@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -291,7 +292,71 @@ func (s *localRegistrySuite) TestBuildWithPush() {
 	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
 }
 
-// TODO add testcase for caching scenarios here
+func (s *localRegistrySuite) TestBuildWithCacheScenarios() {
+	// Note: this test case does not currently work on containerd - caching hangs inside of buildkit during the Solve
+	// (likely an upstream bug - needs more investigation)
+	ctx := context.Background()
+	runtime, err := common.GetRuntime(ctx, s.ClientSet)
+	require.NoError(s.T(), err, "failed to lookup runtime")
+	if strings.Contains(runtime, "containerd") {
+		s.T().Skip("caching scenarios currently broken on containerd")
+	}
+
+	logrus.Infof("%s: Registry Push Build", s.Name)
+
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	imageName := s.registryFQDN + "/" + s.Name + "cachetofrom:dummy"
+	cacheName := s.registryFQDN + "/" + s.Name + "cache"
+	// First run the cache-to only to get the cache created
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--cache-to", "type=registry,ref=" + cacheName,
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cache-to only build failed")
+
+	// Now do another build with cache-to and cache-from
+	args = append(args,
+		"--cache-from", "type=registry,ref="+cacheName,
+	)
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cache-to/from build failed")
+
+	// Do a build with inline caching
+	args = []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--cache-to", "type=inline",
+		"--cache-from", "type=registry,ref=" + cacheName,
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "inline cache build failed")
+
+	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
+
+	// TODO - is there some additional step we should do to make sure the caching actually worked as it should?
+}
+
+func (s *localRegistrySuite) TestBuildPushWithoutTag() {
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "tag is needed when pushing to registry")
+}
 
 func TestLocalRegistrySuite(t *testing.T) {
 	common.Skipper(t)

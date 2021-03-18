@@ -5,6 +5,7 @@ package suites
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/integration/common"
 )
@@ -20,6 +21,22 @@ func TestRootlessSuite(t *testing.T) {
 			CreateFlags: []string{"--rootless", "true"},
 		},
 	})
+}
+
+func (s *rootlessSuite) TestBuildWithoutPush() {
+	// Expected to fail with a user-friendly error message
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	imageName := "dummy:latest"
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--tag", imageName,
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "please specify --push")
 }
 
 func (s *rootlessSuite) TestSimpleBuild() {
