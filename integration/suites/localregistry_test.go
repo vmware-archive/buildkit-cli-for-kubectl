@@ -218,7 +218,7 @@ func (s *localRegistrySuite) SetupSuite() {
 	// Now create the builder with the certs mapped and a config that trusts this local registry
 	logrus.Infof("%s: Creating custom builder with registry cert and config %s", s.Name, s.registryName)
 	dir, cleanup, err := common.NewBuildContext(map[string]string{
-		"buildkitd.toml": fmt.Sprintf(`debug = false
+		"buildkitd.toml": fmt.Sprintf(`debug = true
 [worker.containerd]
 	namespace = "k8s.io"
 [registry."%s"]
@@ -357,6 +357,55 @@ func (s *localRegistrySuite) TestBuildPushWithoutTag() {
 	err = common.RunBuild(args)
 	require.Error(s.T(), err)
 	require.Contains(s.T(), err.Error(), "tag is needed when pushing to registry")
+}
+func (s *localRegistrySuite) TestMultiArchCrossCompile() {
+	DockerfileCross := `FROM --platform=$BUILDPLATFORM golang:latest AS builder
+WORKDIR /project
+COPY *.go ./
+
+ARG TARGETOS
+ARG TARGETARCH
+ENV GOOS=$TARGETOS GOARCH=$TARGETARCH
+RUN CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static"' -o multiarch-test main.go
+
+FROM scratch AS release-linux
+COPY --from=builder /project/multiarch-test /multiarch-test
+ENTRYPOINT ["/multiarch-test"]
+
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS release-windows
+COPY --from=builder /project/multiarch-test /multiarch-test.exe
+ENV TERM="xterm-256color"
+ENTRYPOINT ["\\multiarch-test.exe"]
+
+FROM release-$TARGETOS
+`
+	GoCode := `package main
+import (
+    "fmt"
+    "runtime"
+)
+func main() {
+    fmt.Printf("GOARCH:%s GOOS:%s\n", runtime.GOARCH, runtime.GOOS)
+}`
+
+	dir, cleanup, err := common.NewBuildContext(map[string]string{
+		"Dockerfile": DockerfileCross,
+		"main.go":    GoCode,
+	})
+	require.NoError(s.T(), err, "%s: config file creation", s.Name)
+	defer cleanup()
+	imageName := s.registryFQDN + "/" + s.Name + "multiarchcrosscompile:latest"
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cross-compile multi-arch build failed")
+
+	// TODO - need to poke at the resulting image to make sure it was actually correctly created...
 }
 
 func TestLocalRegistrySuite(t *testing.T) {
