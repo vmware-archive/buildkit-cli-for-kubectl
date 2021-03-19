@@ -5,15 +5,22 @@ package build
 import (
 	"testing"
 
-	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/assert"
 )
 
 func Test_isRefOnlyFormat(t *testing.T) {
 	t.Parallel()
 	resp := isRefOnlyFormat([]string{})
-	require.True(t, resp)
+	assert.True(t, resp)
 	resp = isRefOnlyFormat([]string{"foo"})
-	require.True(t, resp)
+	assert.True(t, resp)
 	resp = isRefOnlyFormat([]string{"foo=bar"})
-	require.False(t, resp)
+	assert.False(t, resp)
+}
+
+func Test_ParseCacheEntry(t *testing.T) {
+	t.Parallel()
+	resp, err := ParseCacheEntry([]string{"foo"})
+	assert.NoError(t, err)
+	assert.Len(t, resp, 1)
 }
