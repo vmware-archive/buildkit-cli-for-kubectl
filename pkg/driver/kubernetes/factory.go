@@ -11,9 +11,9 @@ import (
 	"text/template"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
-	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/bkimage"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/manifest"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/podchooser"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/version"
 
 	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
@@ -110,7 +110,7 @@ func (d *Driver) initDriverFromConfig() error {
 
 	deploymentOpt := &manifest.DeploymentOpt{
 		Name:                   deploymentName,
-		Image:                  bkimage.DefaultImage,
+		Image:                  version.DefaultImage,
 		Replicas:               1,
 		BuildkitFlags:          cfg.BuildkitFlags,
 		Rootless:               false,
@@ -139,7 +139,7 @@ func (d *Driver) initDriverFromConfig() error {
 				return err
 			}
 			if deploymentOpt.Rootless {
-				deploymentOpt.Image = bkimage.DefaultRootlessImage
+				deploymentOpt.Image = version.DefaultRootlessImage
 			}
 		case "loadbalance":
 			switch v {

@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
-	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/bkimage"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/version"
 
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 
@@ -130,7 +130,7 @@ Driver Specific Usage:
 	flags.StringVar(&options.configFile, "config", "", "BuildKit config file")
 	flags.StringArrayVar(&options.platform, "platform", []string{}, "Fixed platforms for current node")
 	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output [auto, plain, tty]. Use plain to show container output")
-	flags.StringVar(&options.image, "image", "", fmt.Sprintf("Specify an alternate buildkit image (default: %s)", bkimage.DefaultImage))
+	flags.StringVar(&options.image, "image", "", fmt.Sprintf("Specify an alternate buildkit image (default: %s)", version.DefaultImage))
 	flags.StringVar(&options.runtime, "runtime", "auto", "Container runtime used by cluster [auto, docker, containerd]")
 	flags.StringVar(&options.containerdSock, "containerd-sock", kubernetes.DefaultContainerdSockPath, "Path to the containerd.sock on the host")
 	flags.StringVar(&options.containerdNamespace, "containerd-namespace", kubernetes.DefaultContainerdNamespace, "Containerd namespace to build images in")
