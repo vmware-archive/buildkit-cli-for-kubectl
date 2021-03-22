@@ -415,5 +415,6 @@ func TestLocalRegistrySuite(t *testing.T) {
 	//t.Parallel()
 	suite.Run(t, &localRegistrySuite{
 		Name: "regtest",
+		// Debug set in the config file
 	})
 }

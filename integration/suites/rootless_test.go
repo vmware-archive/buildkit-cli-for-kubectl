@@ -18,7 +18,7 @@ func TestRootlessSuite(t *testing.T) {
 	suite.Run(t, &rootlessSuite{
 		BaseSuite: common.BaseSuite{
 			Name:        "rootless",
-			CreateFlags: []string{"--rootless", "true"},
+			CreateFlags: []string{"--rootless", "true", "--buildkitd-flags=--debug"},
 		},
 	})
 }

@@ -20,7 +20,7 @@ func TestRandomLBSuite(t *testing.T) {
 	suite.Run(t, &RandomLBSuite{
 		BaseSuite: common.BaseSuite{
 			Name:        "randomlb",
-			CreateFlags: []string{"--loadbalance", "random"},
+			CreateFlags: []string{"--loadbalance", "random", "--buildkitd-flags=--debug"},
 		},
 	})
 }

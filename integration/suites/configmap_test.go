@@ -206,6 +206,7 @@ func TestConfigMapSuite(t *testing.T) {
 	common.Skipper(t)
 	t.Parallel()
 	suite.Run(t, &configMapSuite{
-		Name: "configmaptest",
+		Name:        "configmaptest",
+		CreateFlags: []string{"--buildkitd-flags=--debug"},
 	})
 }
