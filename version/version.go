@@ -8,6 +8,12 @@ var (
 
 	// Version holds the complete version number. Filled in at linking time.
 	Version = "v0.0.0+unknown"
+
+	// DefaultImage hols the primary build image we use
+	DefaultImage = "docker.io/moby/buildkit:buildx-stable-1"
+
+	// DefaultRootlessImage holds the rootless default image
+	DefaultRootlessImage = "docker.io/moby/buildkit:buildx-stable-1-rootless"
 )
 
 func GetVersionString() string {
