@@ -1,5 +1,10 @@
 # BuildKit CLI for kubectl
 
+[![Build Status](https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/actions/workflows/pull_request.yaml/badge.svg?branch=main)](https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/actions/workflows/pull_request.yaml?query=workflow%3Apre-and-post-merge+branch%3Amain)
+[![codecov](https://codecov.io/gh/vmware-tanzu/buildkit-cli-for-kubectl/branch/main/graph/badge.svg)](https://codecov.io/gh/vmware-tanzu/buildkit-cli-for-kubectl)
+[![Go Report Card](https://goreportcard.com/badge/github.com/vmware-tanzu/buildkit-cli-for-kubectl)](https://goreportcard.com/report/github.com/vmware-tanzu/buildkit-cli-for-kubectl)
+
+
 BuildKit CLI for kubectl is a tool for building OCI and Docker images with your kubernetes cluster.
 It replaces the `docker build` command to let you quickly and easily build your single and
 multi-architecture container images.
