@@ -60,6 +60,20 @@ documentation for more information.
 
 ## Getting started
 
+### Installing on MacOS
+
+We include a [Brew](https://docs.brew.sh/) Tap in this repo.  First add the Tap with
+```sh
+brew tap vmware-tanzu/buildkit-cli-for-kubectl https://github.com/vmware-tanzu/buildkit-cli-for-kubectl
+```
+
+Then you can install with
+```sh
+brew install kubectl-buildkit
+```
+
+Keep up-to-date with  `brew upgrade kubectl-buildkit` (or `brew upgrade` to upgrade everything)
+
 ### Installing on Windows
 
 We produce [Choco](https://docs.chocolatey.org/) compatible packages in our https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/releases

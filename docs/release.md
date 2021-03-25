@@ -18,6 +18,7 @@ git log --oneline --no-merges --no-decorate v0.1.1..v0.1.2
 * Rephrase commit messages where necessary to better summarize the fix for readability
 * Have another maintainer review the release
 * Publish the release
+* Update the `HomebrewFormula/kubectl-buildkit.rb` to pin to the new version
 
 
 ## When you're making release CI changes
