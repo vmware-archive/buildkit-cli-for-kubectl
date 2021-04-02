@@ -5,6 +5,7 @@ package driver
 import (
 	"context"
 	"io"
+	"math/rand"
 	"net"
 	"strings"
 	"time"
@@ -95,6 +96,7 @@ type Node struct {
 
 func Boot(ctx context.Context, d Driver, pw progress.Writer) (*client.Client, string, error) {
 	try := 0
+	rand.Seed(time.Now().UnixNano())
 	for {
 		info, err := d.Info(ctx)
 		if err != nil {
@@ -105,14 +107,14 @@ func Boot(ctx context.Context, d Driver, pw progress.Writer) (*client.Client, st
 			if try > maxBootRetries {
 				return nil, "", errors.Errorf("failed to bootstrap builder in %d attempts (%s)", try, err)
 			}
-			if err := d.Bootstrap(ctx, func(s *client.SolveStatus) {
+			if err = d.Bootstrap(ctx, func(s *client.SolveStatus) {
 				if pw != nil {
 					pw.Status() <- s
 				}
 			}); err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "not found")) {
 				// This most likely means another build is running in parallel
 				// Give it just enough time to finish creating resources then retry
-				time.Sleep(250 * time.Millisecond)
+				time.Sleep(25 * time.Millisecond * time.Duration(1+rand.Int63n(39))) // 25 - 1000 ms
 				continue
 			} else if err != nil {
 				return nil, "", err
