@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -217,7 +218,7 @@ func (s *localRegistrySuite) SetupSuite() {
 	// Now create the builder with the certs mapped and a config that trusts this local registry
 	logrus.Infof("%s: Creating custom builder with registry cert and config %s", s.Name, s.registryName)
 	dir, cleanup, err := common.NewBuildContext(map[string]string{
-		"buildkitd.toml": fmt.Sprintf(`debug = false
+		"buildkitd.toml": fmt.Sprintf(`debug = true
 [worker.containerd]
 	namespace = "k8s.io"
 [registry."%s"]
@@ -262,6 +263,7 @@ func (s *localRegistrySuite) TearDownSuite() {
 			logrus.Warnf("failed to clean up registry secret %s: %s", s.configMapName, err)
 		}
 
+		common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
 		logrus.Infof("%s: Removing builder", s.Name)
 		err = common.RunBuildkit("rm", []string{
 			s.Name,
@@ -291,7 +293,120 @@ func (s *localRegistrySuite) TestBuildWithPush() {
 	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
 }
 
-// TODO add testcase for caching scenarios here
+func (s *localRegistrySuite) TestBuildWithCacheScenarios() {
+	// Note: this test case does not currently work on containerd - caching hangs inside of buildkit during the Solve
+	// (likely an upstream bug - needs more investigation)
+	ctx := context.Background()
+	runtime, err := common.GetRuntime(ctx, s.ClientSet)
+	require.NoError(s.T(), err, "failed to lookup runtime")
+	if strings.Contains(runtime, "containerd") {
+		s.T().Skip("caching scenarios currently broken on containerd")
+	}
+
+	logrus.Infof("%s: Registry Push Build", s.Name)
+
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	imageName := s.registryFQDN + "/" + s.Name + "cachetofrom:dummy"
+	cacheName := s.registryFQDN + "/" + s.Name + "cache"
+	// First run the cache-to only to get the cache created
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--cache-to", "type=registry,ref=" + cacheName,
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cache-to only build failed")
+
+	// Now do another build with cache-to and cache-from
+	args = append(args,
+		"--cache-from", "type=registry,ref="+cacheName,
+	)
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cache-to/from build failed")
+
+	// Do a build with inline caching
+	args = []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--cache-to", "type=inline",
+		"--cache-from", "type=registry,ref=" + cacheName,
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "inline cache build failed")
+
+	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
+
+	// TODO - is there some additional step we should do to make sure the caching actually worked as it should?
+}
+
+func (s *localRegistrySuite) TestBuildPushWithoutTag() {
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.Error(s.T(), err)
+	require.Contains(s.T(), err.Error(), "tag is needed when pushing to registry")
+}
+func (s *localRegistrySuite) TestMultiArchCrossCompile() {
+	DockerfileCross := `FROM --platform=$BUILDPLATFORM golang:latest AS builder
+WORKDIR /project
+COPY *.go ./
+
+ARG TARGETOS
+ARG TARGETARCH
+ENV GOOS=$TARGETOS GOARCH=$TARGETARCH
+RUN CGO_ENABLED=0 go build -a -ldflags '-extldflags "-static"' -o multiarch-test main.go
+
+FROM scratch AS release-linux
+COPY --from=builder /project/multiarch-test /multiarch-test
+ENTRYPOINT ["/multiarch-test"]
+
+FROM mcr.microsoft.com/windows/nanoserver:1809 AS release-windows
+COPY --from=builder /project/multiarch-test /multiarch-test.exe
+ENV TERM="xterm-256color"
+ENTRYPOINT ["\\multiarch-test.exe"]
+
+FROM release-$TARGETOS
+`
+	GoCode := `package main
+import (
+    "fmt"
+    "runtime"
+)
+func main() {
+    fmt.Printf("GOARCH:%s GOOS:%s\n", runtime.GOARCH, runtime.GOOS)
+}`
+
+	dir, cleanup, err := common.NewBuildContext(map[string]string{
+		"Dockerfile": DockerfileCross,
+		"main.go":    GoCode,
+	})
+	require.NoError(s.T(), err, "%s: config file creation", s.Name)
+	defer cleanup()
+	imageName := s.registryFQDN + "/" + s.Name + "multiarchcrosscompile:latest"
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--push",
+		"--tag", imageName,
+		"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		dir,
+	}
+	err = common.RunBuild(args)
+	require.NoError(s.T(), err, "cross-compile multi-arch build failed")
+
+	// TODO - need to poke at the resulting image to make sure it was actually correctly created...
+}
 
 func TestLocalRegistrySuite(t *testing.T) {
 	common.Skipper(t)
@@ -300,5 +415,6 @@ func TestLocalRegistrySuite(t *testing.T) {
 	//t.Parallel()
 	suite.Run(t, &localRegistrySuite{
 		Name: "regtest",
+		// Debug set in the config file
 	})
 }

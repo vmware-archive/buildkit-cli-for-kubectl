@@ -20,6 +20,7 @@ func TestDefaultSuite(t *testing.T) {
 			Name: "buildkit", // TODO pull this from the actual default name
 			// For the "default" scenario, we rely on the initial test case to establish the builder with defaults
 			SkipSetupCreate: true,
+			CreateFlags:     []string{"--buildkitd-flags=--debug"},
 		},
 	})
 }

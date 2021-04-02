@@ -87,6 +87,7 @@ func TestParallelDefaultBuildSuite(t *testing.T) {
 	common.Skipper(t)
 	// We don't parallelize with other tests, since we use the default builder name
 	suite.Run(t, &parallelDefaultSuite{
-		Name: "buildkit",
+		Name:        "buildkit",
+		CreateFlags: []string{"--buildkitd-flags=--debug"},
 	})
 }
