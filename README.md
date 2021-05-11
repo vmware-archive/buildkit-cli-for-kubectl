@@ -183,6 +183,11 @@ You can then create a customized builder with
 kubectl buildkit create --custom-config=custom-root-certs --config ./buildkitd.toml
 ```
 
+## Get in Touch
+
+If you encounter issues or have questions/comments, you can find us on the CNCF Slack at
+[#buildkit-cli-for-kubectl](https://cloud-native.slack.com/messages/buildkit-cli-for-kubectl)
+
 ## Contributing
 
 Check out our [contributing](./CONTRIBUTING.md) for guidance on how to help contribute to the project.
