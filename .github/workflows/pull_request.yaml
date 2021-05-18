@@ -11,7 +11,7 @@ env:
 
 jobs:
   test-unit:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -31,7 +31,7 @@ jobs:
         name: codecov-unit-test
 
   test-integration-containerd:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -44,7 +44,10 @@ jobs:
     - name: Setup containerd cluster
       run: |
         set -x
-        sudo apt-get install -y kubeadm kubelet
+        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get update
+        sudo apt-get install -y kubelet kubeadm kubectl
         sudo swapoff -a
         # Ensure dockerd isn't running
         sudo systemctl stop docker.socket
@@ -68,7 +71,7 @@ jobs:
         name: codecov-integration-test-containerd
 
   test-integration-dockerd:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -81,7 +84,10 @@ jobs:
     - name: Setup kubeadm cluster with default docker runtime
       run: |
         set -x
-        sudo apt-get install -y kubeadm kubelet
+        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get update
+        sudo apt-get install -y kubelet kubeadm kubectl
         sudo swapoff -a
         sudo kubeadm init
         mkdir -p $HOME/.kube/
@@ -103,7 +109,7 @@ jobs:
         name: codecov-integration-test-dockerd
 
   lint:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
@@ -117,7 +123,7 @@ jobs:
         version: v1.29
 
   build:
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
       uses: actions/setup-go@v2
