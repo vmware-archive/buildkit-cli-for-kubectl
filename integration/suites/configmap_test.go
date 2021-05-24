@@ -4,7 +4,9 @@ package suites
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sirupsen/logrus"
@@ -56,14 +58,32 @@ func (s *configMapSuite) getConfigMap() *corev1.ConfigMap {
 	}
 }
 
-func (s *configMapSuite) TestDefaultCreate() {
-	logrus.Infof("%s: Creating builder with default config", s.Name)
+func (s *configMapSuite) getCreateArgs() []string {
 	args := append(
 		[]string{
 			s.Name,
 		},
 		s.CreateFlags...,
 	)
+	nodes, err := common.GetNodes(context.Background(), s.ClientSet)
+	require.NoError(s.T(), err, "%s: get nodes failed", s.Name)
+	if len(nodes) > 1 {
+		hasReplicas := false
+		for _, arg := range args {
+			if strings.Contains(arg, "--replica") {
+				hasReplicas = true
+			}
+		}
+		if !hasReplicas {
+			args = append(args, fmt.Sprintf("--replicas=%d", len(nodes)))
+		}
+	}
+	return args
+}
+
+func (s *configMapSuite) TestDefaultCreate() {
+	args := s.getCreateArgs()
+	logrus.Infof("%s: Creating builder with default config", s.Name)
 	err := common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder create failed", s.Name)
 	cfg, err := s.configMapClient.Get(context.Background(), s.Name, metav1.GetOptions{})
@@ -92,12 +112,7 @@ func (s *configMapSuite) TestPreExistingConfigDefaultCreate() {
 	require.NoError(s.T(), err, "%s: pre-existing configmap create failed", s.Name)
 
 	logrus.Infof("%s: Creating builder with default config", s.Name)
-	args := append(
-		[]string{
-			s.Name,
-		},
-		s.CreateFlags...,
-	)
+	args := s.getCreateArgs()
 	err = common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder create failed", s.Name)
 	cfg, err := s.configMapClient.Get(context.Background(), s.Name, metav1.GetOptions{})
@@ -130,13 +145,7 @@ func (s *configMapSuite) TestCustomCreate() {
 
 	defer cleanup()
 
-	args := append(
-		[]string{
-			"--config", filepath.Join(dir, "buildkitd.toml"),
-			s.Name,
-		},
-		s.CreateFlags...,
-	)
+	args := append(s.getCreateArgs(), "--config", filepath.Join(dir, "buildkitd.toml"))
 	err = common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder create failed", s.Name)
 	cfg, err := s.configMapClient.Get(context.Background(), s.Name, metav1.GetOptions{})
@@ -172,13 +181,7 @@ func (s *configMapSuite) TestPreExistingWithCustomCreate() {
 
 	defer cleanup()
 
-	args := append(
-		[]string{
-			"--config", filepath.Join(dir, "buildkitd.toml"),
-			s.Name,
-		},
-		s.CreateFlags...,
-	)
+	args := append(s.getCreateArgs(), "--config", filepath.Join(dir, "buildkitd.toml"))
 	err = common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder create failed", s.Name)
 	cfg, err := s.configMapClient.Get(context.Background(), s.Name, metav1.GetOptions{})

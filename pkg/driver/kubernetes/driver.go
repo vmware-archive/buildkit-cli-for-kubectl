@@ -20,7 +20,9 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/podchooser"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	pb "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/proxy/proto"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
+	"google.golang.org/grpc"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -195,10 +197,18 @@ func (d *Driver) Clients(ctx context.Context) (*driver.BuilderClients, error) {
 
 func buildNodeClient(ctx context.Context, pod *corev1.Pod, restClient rest.Interface, restClientConfig *rest.Config) (*driver.NodeClient, error) {
 	containerName := pod.Spec.Containers[0].Name
-	cmd := []string{"buildctl", "dial-stdio"}
+	var cmd []string
 	nodeClient := &driver.NodeClient{
 		NodeName:    pod.Name,
 		ClusterAddr: pod.Status.PodIP,
+	}
+	rootless := isRootless(pod.ObjectMeta.Labels["rootless"])
+	if rootless {
+		// No proxy used in rootless mode
+		cmd = []string{"buildctl", "dial-stdio"}
+	} else {
+		// Note: even though we're exec'ing into the buildkit container, the proxy container's socket file is mounted
+		cmd = []string{"buildctl", "--addr", "unix:///run/buildkit/buildkit-proxy.sock", "dial-stdio"}
 	}
 	conn, err := execconn.ExecConn(restClient, restClientConfig,
 		pod.Namespace, pod.Name, containerName, cmd)
@@ -213,6 +223,23 @@ func buildNodeClient(ctx context.Context, pod *corev1.Pod, restClient rest.Inter
 		return nil, err
 	}
 	nodeClient.BuildKitClient = buildkitClient
+	if !rootless {
+		// Note: The BuildKit client API does not currently expose a mechanism to inject a grpc.ClientConn and
+		// we can't multiplex at the net.Conn level, so we have to establish two distinct connections to the pod
+		conn2, err := execconn.ExecConn(restClient, restClientConfig,
+			pod.Namespace, pod.Name, containerName, cmd)
+		if err != nil {
+			return nil, err
+		}
+		grpcConn, err := grpc.DialContext(ctx, "", grpc.WithInsecure(), grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return conn2, nil
+		}))
+		if err != nil {
+			return nil, err
+		}
+		proxyClient := pb.NewProxyClient(grpcConn)
+		nodeClient.ProxyClient = &proxyClient
+	}
 	return nodeClient, nil
 }
 

@@ -5,6 +5,7 @@ package common
 import (
 	"io"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
@@ -56,6 +57,28 @@ func RunBuildkit(command string, args []string, streams RunBuildStreams) error {
 		[]string{command, "--kubeconfig", os.Getenv("TEST_KUBECONFIG")},
 		args...,
 	)
+
+	if altBuildKitImage := os.Getenv("TEST_ALT_BUILDKIT_IMAGE"); altBuildKitImage != "" {
+		isCreate := false
+		hasRootless := false
+		hasImage := false
+		for _, arg := range finalArgs {
+			if strings.Contains(arg, "--rootless") {
+				hasRootless = true
+			} else if strings.Contains(arg, "--image") {
+				hasImage = true
+			} else if arg == "create" {
+				isCreate = true
+			}
+		}
+		if isCreate && !hasImage {
+			if hasRootless {
+				finalArgs = append(finalArgs, "--image", altBuildKitImage+"-rootless")
+			} else {
+				finalArgs = append(finalArgs, "--image", altBuildKitImage)
+			}
+		}
+	}
 	logrus.Infof("CMD: %v", finalArgs)
 	if streams.In == nil {
 		streams.In = os.Stdin

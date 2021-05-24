@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -95,7 +96,10 @@ func (s *localRegistrySuite) SetupSuite() {
 			"htpasswd": []byte(htpass),
 		},
 	}
-	_, err = s.configMapClient.Create(context.Background(), cfgMap, metav1.CreateOptions{})
+
+	// Note: on some classes of test failures resource can leak, so we also delete before create
+	_ = s.configMapClient.Delete(ctx, cfgMap.Name, metav1.DeleteOptions{})
+	_, err = s.configMapClient.Create(ctx, cfgMap, metav1.CreateOptions{})
 	require.NoError(s.T(), err, "%s: create configmap failed", s.Name)
 
 	// Create some registry credentials
@@ -119,11 +123,14 @@ func (s *localRegistrySuite) SetupSuite() {
 			),
 		},
 	}
-	_, err = s.secretClient.Create(context.Background(), secret, metav1.CreateOptions{})
+	_ = s.secretClient.Delete(ctx, secret.Name, metav1.DeleteOptions{})
+	_, err = s.secretClient.Create(ctx, secret, metav1.CreateOptions{})
 	require.NoError(s.T(), err, "%s: create registry secret failed", s.Name)
 
 	// Start up the local registry
 	logrus.Infof("%s: Running local registry pod %s with cert", s.Name, s.registryName)
+	var zero64 int64
+	_ = s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{GracePeriodSeconds: &zero64})
 	_, err = s.podClient.Create(ctx,
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -194,6 +201,7 @@ func (s *localRegistrySuite) SetupSuite() {
 	require.NoError(s.T(), err, "%s: create registry pod failed", s.Name)
 
 	logrus.Infof("%s: Creating ClusterIP Service for registry %s", s.Name, s.registryName)
+	_ = s.serviceClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
 	_, err = s.serviceClient.Create(ctx,
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
@@ -237,6 +245,12 @@ func (s *localRegistrySuite) SetupSuite() {
 		},
 		s.CreateFlags...,
 	)
+	nodes, err := common.GetNodes(context.Background(), s.ClientSet)
+	require.NoError(s.T(), err, "%s: get nodes failed", s.Name)
+	if len(nodes) > 1 {
+		args = append(args, fmt.Sprintf("--replicas=%d", len(nodes)))
+	}
+
 	err = common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder creation failed", s.Name)
 }
@@ -287,6 +301,23 @@ func (s *localRegistrySuite) TestBuildWithPush() {
 		"--builder", s.Name,
 		"--push",
 		"--tag", imageName,
+		dir,
+	}
+	err = common.RunBuild(args, common.RunBuildStreams{})
+	require.NoError(s.T(), err, "build failed")
+	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
+}
+
+func (s *localRegistrySuite) TestBuildWithImageOutputPush() {
+	logrus.Infof("%s: Registry Image Output Push Build", s.Name)
+
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	imageName := s.registryFQDN + "/" + s.Name + "replaceme:2"
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--output", "type=image,push=true,name=" + imageName,
 		dir,
 	}
 	err = common.RunBuild(args, common.RunBuildStreams{})
@@ -360,7 +391,9 @@ func (s *localRegistrySuite) TestBuildPushWithoutTag() {
 	require.Contains(s.T(), err.Error(), "tag is needed when pushing to registry")
 }
 func (s *localRegistrySuite) TestMultiArchCrossCompile() {
-	DockerfileCross := `FROM --platform=$BUILDPLATFORM golang:latest AS builder
+	proxyCache := os.Getenv("DOCKER_HUB_LIBRARY_PROXY_CACHE")
+
+	DockerfileCross := fmt.Sprintf(`FROM --platform=$BUILDPLATFORM %sgolang:latest AS builder
 WORKDIR /project
 COPY *.go ./
 
@@ -379,7 +412,7 @@ ENV TERM="xterm-256color"
 ENTRYPOINT ["\\multiarch-test.exe"]
 
 FROM release-$TARGETOS
-`
+`, proxyCache)
 	GoCode := `package main
 import (
     "fmt"

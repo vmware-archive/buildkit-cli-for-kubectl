@@ -2,20 +2,20 @@
 <!-- Created with Inkscape (http://www.inkscape.org/) -->
 
 <svg
-   xmlns:dc="http://purl.org/dc/elements/1.1/"
-   xmlns:cc="http://creativecommons.org/ns#"
-   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-   xmlns:svg="http://www.w3.org/2000/svg"
-   xmlns="http://www.w3.org/2000/svg"
-   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
-   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
    width="500"
    height="300"
    viewBox="0 0 132.29167 79.375002"
    version="1.1"
    id="svg8"
-   inkscape:version="0.92.5 (2060ec1f9f, 2020-04-08)"
-   sodipodi:docname="architecture.svg">
+   inkscape:version="1.1.1 (c3084ef, 2021-09-22)"
+   sodipodi:docname="architecture.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
   <defs
      id="defs2">
     <marker
@@ -55,25 +55,26 @@
      pagecolor="#ffffff"
      bordercolor="#666666"
      borderopacity="1.0"
-     inkscape:pageopacity="0.0"
+     inkscape:pageopacity="1"
      inkscape:pageshadow="2"
      inkscape:zoom="2.2807845"
-     inkscape:cx="256.34287"
-     inkscape:cy="156.49955"
+     inkscape:cx="125.17623"
+     inkscape:cy="156.30587"
      inkscape:document-units="in"
      inkscape:current-layer="layer1"
      showgrid="false"
      showborder="true"
-     inkscape:window-width="1920"
-     inkscape:window-height="1016"
-     inkscape:window-x="0"
-     inkscape:window-y="27"
-     inkscape:window-maximized="1"
+     inkscape:window-width="1698"
+     inkscape:window-height="1311"
+     inkscape:window-x="3022"
+     inkscape:window-y="25"
+     inkscape:window-maximized="0"
      fit-margin-top="0"
      fit-margin-left="0"
      fit-margin-right="0"
      fit-margin-bottom="0"
-     units="px" />
+     units="px"
+     inkscape:pagecheckerboard="false" />
   <metadata
      id="metadata5">
     <rdf:RDF>
@@ -82,7 +83,6 @@
         <dc:format>image/svg+xml</dc:format>
         <dc:type
            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-        <dc:title></dc:title>
       </cc:Work>
     </rdf:RDF>
   </metadata>
@@ -91,6 +91,14 @@
      inkscape:groupmode="layer"
      id="layer1"
      transform="translate(60.096745,-145.225)">
+    <rect
+       style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.184886;stroke-opacity:1"
+       id="rect4526-6-5"
+       width="42.708935"
+       height="20.635561"
+       x="-2.9068258"
+       y="181.2511"
+       ry="1.372285" />
     <rect
        style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.10192164;stroke-opacity:1"
        id="rect4526"
@@ -118,6 +126,14 @@
        x="5.8317699"
        y="159.64774"
        ry="0.72058499" />
+    <rect
+       style="fill:#007ed5;fill-opacity:1;stroke:#1d428a;stroke-width:0.0864714;stroke-linejoin:round;stroke-opacity:1"
+       id="rect4526-6-58"
+       width="19.653984"
+       height="9.8088503"
+       x="20.155849"
+       y="192.08554"
+       ry="0.62541515" />
     <text
        xml:space="preserve"
        style="font-style:normal;font-weight:normal;font-size:5.32642603px;line-height:1;font-family:sans-serif;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13316065"
@@ -134,30 +150,17 @@
          x="17.681131"
          y="169.68965"
          style="font-size:2.84076071px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.13316065">(Deployment)</tspan></text>
-    <rect
-       style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.13681482;stroke-opacity:1"
-       id="rect4526-6-5"
-       width="42.757008"
-       height="11.287193"
-       x="-2.9308615"
-       y="181.22707"
-       ry="0.7506094" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:5.32642603px;line-height:1;font-family:sans-serif;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13316065"
+       style="font-style:normal;font-weight:normal;font-size:5.32643px;line-height:1;font-family:sans-serif;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.133161"
        x="18.447638"
        y="185.93538"
        id="text4530-7-6"><tspan
-         id="tspan4565-9"
          sodipodi:role="line"
          x="18.447638"
          y="185.93538"
-         style="font-size:5.32642603px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.13316065">builder pod</tspan><tspan
-         sodipodi:role="line"
-         x="18.447638"
-         y="191.26181"
-         style="font-size:2.84076071px;line-height:0.89999998;text-align:center;text-anchor:middle;stroke-width:0.13316065"
-         id="tspan5067">(running buildkitd)</tspan></text>
+         style="font-size:5.32643px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.133161"
+         id="tspan5067">builder pod</tspan></text>
     <rect
        style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.10192164;stroke-opacity:1"
        id="rect4526-6-1"
@@ -178,23 +181,23 @@
          y="195.53247"
          style="font-size:5.32642603px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.13316065">kubelet</tspan></text>
     <rect
-       style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.15344714;stroke-opacity:1"
+       style="fill:#00c1d5;fill-opacity:1;stroke:#1d428a;stroke-width:0.153447;stroke-opacity:1"
        id="rect4526-6-5-9"
        width="53.951588"
        height="11.252273"
-       x="7.7714305"
-       y="202.59261"
+       x="15.775804"
+       y="212.45306"
        ry="0.7506094" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:5.32642603px;line-height:1;font-family:sans-serif;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13316065"
-       x="34.74202"
-       y="210.20445"
+       style="font-style:normal;font-weight:normal;font-size:5.32643px;line-height:1;font-family:sans-serif;text-align:center;letter-spacing:0px;word-spacing:0px;text-anchor:middle;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.133161"
+       x="42.746391"
+       y="220.06491"
        id="text4530-7-6-3"><tspan
          sodipodi:role="line"
-         x="34.74202"
-         y="210.20445"
-         style="font-size:5.32642603px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.13316065"
+         x="42.746391"
+         y="220.06491"
+         style="font-size:5.32643px;line-height:1;text-align:center;text-anchor:middle;stroke-width:0.133161"
          id="tspan4661">container runtime</tspan></text>
     <path
        style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.13337038;stroke-linecap:butt;stroke-linejoin:miter;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1;marker-end:url(#Arrow2Lend)"
@@ -203,22 +206,52 @@
        inkscape:connector-type="polyline"
        inkscape:connector-curvature="0" />
     <path
-       style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.13316065px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;marker-end:url(#marker5035)"
-       d="M 22.756609,192.51425 30.45159,202.5926"
+       style="fill:none;fill-rule:evenodd;stroke:#000000;stroke-width:0.133161px;stroke-linecap:butt;stroke-linejoin:miter;stroke-opacity:1;marker-end:url(#marker5035)"
+       d="m 18.334659,201.88666 7.694981,10.07835"
        id="path5025"
        inkscape:connector-type="polyline"
        inkscape:connector-curvature="0" />
     <text
        xml:space="preserve"
-       style="font-style:normal;font-weight:normal;font-size:5.32642603px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13316065"
-       x="-5.0754256"
-       y="199.36967"
+       style="font-style:normal;font-weight:normal;font-size:5.32643px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.133161"
+       x="-9.8316479"
+       y="210.04218"
        id="text5077"><tspan
          sodipodi:role="line"
          id="tspan5075"
-         x="-5.0754256"
-         y="199.36967"
-         style="font-size:3.550951px;stroke-width:0.13316065">(mounted socket)</tspan></text>
+         x="-9.8316479"
+         y="210.04218"
+         style="font-size:3.55095px;stroke-width:0.133161">(mounted socket)</tspan></text>
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:5.32643px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.133161"
+       x="22.49753"
+       y="198.0712"
+       id="text5077-00"><tspan
+         sodipodi:role="line"
+         id="tspan5075-8"
+         x="22.49753"
+         y="198.0712"
+         style="font-size:3.55095px;stroke-width:0.133161">buildkitd</tspan></text>
+    <rect
+       style="fill:#007ed5;fill-opacity:1;stroke:#1d428a;stroke-width:0.0864714;stroke-linejoin:round;stroke-opacity:1"
+       id="rect4526-6-58-4"
+       width="19.653984"
+       height="9.8088503"
+       x="-2.9068258"
+       y="192.0778"
+       ry="0.62541515" />
+    <text
+       xml:space="preserve"
+       style="font-style:normal;font-weight:normal;font-size:5.32643px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.133161"
+       x="1.5515215"
+       y="198.06346"
+       id="text5077-00-0"><tspan
+         sodipodi:role="line"
+         id="tspan5075-8-6"
+         x="1.5515215"
+         y="198.06346"
+         style="font-size:3.55095px;stroke-width:0.133161">proxy</tspan></text>
     <text
        xml:space="preserve"
        style="font-style:normal;font-weight:normal;font-size:5.32642603px;line-height:1.25;font-family:sans-serif;letter-spacing:0px;word-spacing:0px;fill:#000000;fill-opacity:1;stroke:none;stroke-width:0.13316065"

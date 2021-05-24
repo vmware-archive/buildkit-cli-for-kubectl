@@ -14,8 +14,15 @@ var (
 
 	// DefaultRootlessImage holds the rootless default image
 	DefaultRootlessImage = "docker.io/moby/buildkit:buildx-stable-1-rootless"
+
+	// DefaultProxyImage holds the image of the helper
+	DefaultProxyImage = "ghcr.io/vmware-tanzu/buildkit-proxy"
 )
 
 func GetVersionString() string {
 	return Version
+}
+
+func GetProxyImage() string {
+	return DefaultProxyImage + ":" + Version
 }

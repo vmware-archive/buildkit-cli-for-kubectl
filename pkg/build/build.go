@@ -15,13 +15,16 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/images"
 	"github.com/containerd/containerd/platforms"
+	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	pb "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/proxy/proto"
 	"google.golang.org/grpc"
 	"k8s.io/client-go/tools/clientcmd"
 
@@ -126,23 +129,22 @@ func allIndexes(l int) []int {
 	return out
 }
 
-func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw progress.Writer) (map[string]map[string]*client.Client, error) {
+func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw progress.Writer) (map[string]*driver.BuilderClients, error) {
 	lock := sync.Mutex{}
-	clients := map[string]map[string]*client.Client{} // [driverName][chosenNodeName]
+	clients := map[string]*driver.BuilderClients{} // [driverName]
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, i := range idxs {
-		lock.Lock()
-		clients[drivers[i].Name] = map[string]*client.Client{}
-		lock.Unlock()
 		func(i int) {
 			eg.Go(func() error {
-				builderClients, err := driver.Boot(ctx, drivers[i].Driver, pw)
+				ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+				defer cancel()
+				bootResults, err := driver.Boot(ctx, drivers[i].Driver, pw)
 				if err != nil {
 					return err
 				}
 				lock.Lock()
-				clients[drivers[i].Name][builderClients.ChosenNode.NodeName] = builderClients.ChosenNode.BuildKitClient
+				clients[drivers[i].Name] = bootResults
 				lock.Unlock()
 				return nil
 			})
@@ -176,7 +178,7 @@ func splitToDriverPairs(availablePlatforms map[string]int, opt map[string]Option
 	return m
 }
 
-func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Options, pw progress.Writer) (map[string][]driverPair, map[string]map[string]*client.Client, error) {
+func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Options, pw progress.Writer) (map[string][]driverPair, map[string]*driver.BuilderClients, error) {
 	availablePlatforms := map[string]int{}
 	for i, d := range drivers {
 		for _, p := range d.Platform {
@@ -224,26 +226,30 @@ func resolveDrivers(ctx context.Context, drivers []DriverInfo, opt map[string]Op
 	if err != nil {
 		return nil, nil, err
 	}
+	workerLen := 0
+	for driverName := range clients {
+		workerLen += len(clients[driverName].OtherNodes) + 1
+	}
 
 	eg, ctx := errgroup.WithContext(ctx)
-	workers := make([][]*client.WorkerInfo, len(clients))
+	workers := make([][]*client.WorkerInfo, workerLen)
 
 	i := 0
 	for driverName := range clients {
-		for nodeName, c := range clients[driverName] {
-			if c == nil {
-				continue
-			}
-			func(nodeName string, i int) {
-				eg.Go(func() error {
-					ww, err := clients[driverName][nodeName].ListWorkers(ctx)
-					if err != nil {
-						return errors.Wrap(err, "listing workers")
-					}
-					workers[i] = ww
-					return nil
-				})
-			}(nodeName, i)
+		listWorkers := func(nodeClient driver.NodeClient, i int) {
+			eg.Go(func() error {
+				ww, err := nodeClient.BuildKitClient.ListWorkers(ctx)
+				if err != nil {
+					return errors.Wrap(err, "listing workers")
+				}
+				workers[i] = ww
+				return nil
+			})
+		}
+		listWorkers(clients[driverName].ChosenNode, i)
+		i++
+		for _, nodeClient := range clients[driverName].OtherNodes {
+			listWorkers(nodeClient, i)
 			i++
 		}
 	}
@@ -342,6 +348,7 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 
 	if multiDriver {
 		// force creation of manifest list
+		// TODO - more work needed for native multi-arch
 		so.FrontendAttrs["multi-platform"] = "true"
 	}
 
@@ -357,22 +364,27 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 		return nil, nil, errors.Errorf("multiple outputs currently unsupported")
 	}
 
+	// From here down we assume exactly 1 exports listed
+
 	// Update any generic "runtime" exports to be runtime specific now:
 	driverFeatures := d.Features()
-	for i, e := range opt.Exports {
-		switch e.Type {
-		case "runtime":
-			// TODO - this is a bit messy - can we just leverage "image" Type and "do the right thing" instead of
-			// having this alternate "runtime" type that's ~inconsistent?
-			if driverFeatures[driver.ContainerdExporter] {
-				opt.Exports[i].Type = "image"
-			} else if driverFeatures[driver.DockerExporter] {
-				opt.Exports[i].Type = "docker"
-			} else {
-				// TODO should we allow building without load or push, perhaps a new "nil" or equivalent output type?
-				return nil, nil, errors.Errorf("loading image into cluster runtime not supported by this builder, please specify --push or a client local output: --output=type=local,dest=. --output=type=tar,dest=out.tar ")
-			}
+	switch opt.Exports[0].Type {
+	case "runtime":
+		// Note: Docker doesn't natively support loading OCI manifest tar files
+		//       so we adjust the export type based on the runtime
+		if driverFeatures[driver.ContainerdExporter] {
+			opt.Exports[0].Type = "oci"
+		} else if driverFeatures[driver.DockerExporter] {
+			opt.Exports[0].Type = "docker"
+		} else {
+			// TODO should we allow building without load or push, perhaps a new "nil" or equivalent output type?
+			return nil, nil, errors.Errorf("loading image into cluster runtime not supported by this builder, please specify --push or a client local output: --output=type=local,dest=. --output=type=tar,dest=out.tar ")
 		}
+	}
+
+	pushing := false
+	if p, ok := opt.Exports[0].Attrs["push"]; ok {
+		pushing, _ = strconv.ParseBool(p)
 	}
 
 	// fill in image exporter names from tags
@@ -385,68 +397,69 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 			}
 			tags[i] = ref.String()
 		}
-		for i, e := range opt.Exports {
-			switch e.Type {
-			case "image", "oci", "docker":
-				opt.Exports[i].Attrs["name"] = strings.Join(tags, ",")
-			}
+
+		switch opt.Exports[0].Type {
+		case "image", "oci", "docker":
+			opt.Exports[0].Attrs["name"] = strings.Join(tags, ",")
 		}
 	} else {
-		for _, e := range opt.Exports {
-			if e.Type == "image" && e.Attrs["name"] == "" && e.Attrs["push"] != "" {
-				if ok, _ := strconv.ParseBool(e.Attrs["push"]); ok {
-					return nil, nil, errors.Errorf("tag is needed when pushing to registry")
-				}
+		if opt.Exports[0].Type == "image" && opt.Exports[0].Attrs["name"] == "" {
+			if pushing {
+				return nil, nil, errors.Errorf("tag is needed when pushing to registry")
 			}
 		}
 	}
 
-	// set up exporters
-	for i, e := range opt.Exports {
-		pushing := false
-		if p, ok := e.Attrs["push"]; ok {
-			pushing, _ = strconv.ParseBool(p)
-		}
-		if (e.Type == "local" || e.Type == "tar") && opt.ImageIDFile != "" {
-			return nil, nil, errors.Errorf("local and tar exporters are incompatible with image ID file")
-		}
+	if (opt.Exports[0].Type == "local" || opt.Exports[0].Type == "tar") && opt.ImageIDFile != "" {
+		return nil, nil, errors.Errorf("local and tar exporters are incompatible with image ID file")
+	}
 
-		// TODO - do more research on what this really means and if it's wired up correctly
-		if e.Type == "oci" && !driverFeatures[driver.OCIExporter] {
+	// set up exporters
+	switch opt.Exports[0].Type {
+	case "oci":
+		if !driverFeatures[driver.OCIExporter] {
 			return nil, nil, notSupported(d, driver.OCIExporter)
 		}
-		if e.Type == "docker" {
-			if !driverFeatures[driver.DockerExporter] {
-				return nil, nil, notSupported(d, driver.DockerExporter)
+		if opt.Exports[0].Output == nil {
+			w, cancel, err := dl("")
+			if err != nil {
+				return nil, nil, err
 			}
-			// If the runtime is docker and we're not in
-			// rootless mode, then we will have mounted
-			// the docker.sock inside the buildkit pods, and
-			// can use the exec trick with
-			//   buildctl --addr unix://run/docker.sock
-			// to proxy to the API endpoint and perform an image load
-			// This isn't as efficient as tagging/exposing the images
-			// directly within containerd, but will suffice during
-			// the transition period while many people still run Docker
-			// as their container runtime for kubernetes
+			defers = append(defers, cancel)
+			opt.Exports[0].Output = wrapWriteCloser(w)
+		}
+	case "docker":
+		if !driverFeatures[driver.DockerExporter] {
+			return nil, nil, notSupported(d, driver.DockerExporter)
+		}
+		// If the runtime is docker and we're not in
+		// rootless mode, then we will have mounted
+		// the docker.sock inside the buildkit pods, and
+		// can use the exec trick with
+		//   buildctl --addr unix://run/docker.sock
+		// to proxy to the API endpoint and perform an image load
+		// This isn't as efficient as tagging/exposing the images
+		// directly within containerd, but will suffice during
+		// the transition period while many people still run Docker
+		// as their container runtime for kubernetes
 
-			// If an Output (file) is already specified, let it pass through
-			if e.Output == nil {
-				w, cancel, err := dl("")
-				if err != nil {
-					return nil, nil, err
-				}
-				defers = append(defers, cancel)
-				opt.Exports[i].Output = wrapWriteCloser(w)
+		// If an Output (file) is already specified, let it pass through
+		if opt.Exports[0].Output == nil {
+			w, cancel, err := dl("")
+			if err != nil {
+				return nil, nil, err
 			}
+			defers = append(defers, cancel)
+			opt.Exports[0].Output = wrapWriteCloser(w)
 		}
-		if e.Type == "containerd" { // TODO - should this just be dropped in favor of "image"?
+	case "containerd": // TODO - should this just be dropped in favor of "image"?
 
-			// TODO should this just be wired up as "image" instead?
-			return nil, nil, notSupported(d, driver.ContainerdExporter)
-			// TODO implement this scenario
-		}
-		if e.Type == "image" && !pushing {
+		// TODO should this just be wired up as "image" instead?
+		return nil, nil, notSupported(d, driver.ContainerdExporter)
+		// TODO implement this scenario
+	case "image":
+		// TODO - further refinement may be possible here with native and cross-compilation multi-arch
+		if !pushing {
 			if !driverFeatures[driver.ContainerdExporter] {
 				// TODO - this could use a little refinement - if the user specifies `--output=image` it would be nice
 				// to auto-wire this to handle both runtimes (docker and containerd)
@@ -466,25 +479,23 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 				}
 			}
 
-			// TODO - figure out how to wire this up so the exporter output type is oci instead of image
-
 			// If an Output (file) is already specified, let it pass through
-			if e.Output == nil && multiNode {
+			if opt.Exports[0].Output == nil && multiNode {
 				// TODO - Explore if there's a model to avoid having to transfer to the builder node
-				opt.Exports[i].Type = "oci" // TODO - this most likely means the image isn't saved locally too
+				opt.Exports[0].Type = "oci" // TODO - this most likely means the image isn't saved locally too
 				w, cancel, err := dl("")
 				if err != nil {
 					return nil, nil, err
 				}
 				defers = append(defers, cancel)
-				opt.Exports[i].Output = wrapWriteCloser(w)
+				opt.Exports[0].Output = wrapWriteCloser(w)
 			}
 		}
 
 		// TODO - image + runtime==docker, use the same proxy as above
 		/* Nuke this once everything's refactored
 		if e.Type == "image" && isDefaultMobyDriver { // TODO kube driver use-case coverage here...
-			opt.Exports[i].Type = "moby"
+			opt.Exports[0].Type = "moby"
 			if e.Attrs["push"] != "" {
 				if ok, _ := strconv.ParseBool(e.Attrs["push"]); ok {
 					return nil, nil, errors.Errorf("auto-push is currently not implemented for docker driver")
@@ -492,9 +503,9 @@ func toSolveOpt(ctx context.Context, d driver.Driver, multiDriver bool, opt Opti
 			}
 		}
 		*/
-
-		// TODO If we're multi-node and "image" is specified, should we replicate it on all nodes?
 	}
+
+	// TODO If we're multi-node and "image" is specified, should we replicate it on all nodes?
 
 	so.Exports = opt.Exports
 	so.Session = opt.Session
@@ -567,6 +578,40 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 		close(pw.Status())
 		<-pw.Done()
 		return nil, err
+	}
+
+	// Activate proxy listeners on other nodes if detected
+	for _, builderClients := range clients {
+		replicateRequest := &pb.ReplicateRequest{Nodes: []*pb.Node{}}
+		for _, nodeClients := range builderClients.OtherNodes {
+			if nodeClients.ProxyClient != nil && nodeClients.ClusterAddr != "" {
+				proxyClient := *nodeClients.ProxyClient
+				resp, err := proxyClient.Listen(ctx, &pb.ListenRequest{})
+				if err != nil {
+					return nil, errors.Wrapf(err, "failed to instruct alternate builder node %s to listen", nodeClients.NodeName)
+				}
+				replicateRequest.Nodes = append(replicateRequest.Nodes, &pb.Node{
+					Key:  resp.Key,
+					Addr: nodeClients.ClusterAddr,
+				})
+				defer func() {
+					ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+					_, err := proxyClient.StopListen(ctx, resp)
+					if err != nil {
+						// TODO - should probably send message to pw...
+						logrus.Warnf("failed to stop listening on %s: %s", nodeClients.NodeName, err)
+					}
+					cancel()
+				}()
+			}
+		}
+		if len(replicateRequest.Nodes) > 0 && builderClients.ChosenNode.ProxyClient != nil {
+			proxyClient := *builderClients.ChosenNode.ProxyClient
+			_, err := proxyClient.Replicate(ctx, replicateRequest)
+			if err != nil {
+				return nil, errors.Wrapf(err, "failed to set up replication on builder %s", builderClients.ChosenNode.NodeName)
+			}
+		}
 	}
 
 	defers := make([]func(), 0, 2)
@@ -736,14 +781,7 @@ func Build(ctx context.Context, drivers []DriverInfo, opt map[string]Options, ku
 
 				func(i int, dp driverPair, so client.SolveOpt) {
 					pw := mw.WithPrefix(k, multiTarget)
-
-					// TODO this is a little mess - could use some refactoring
-					var c *client.Client
-					for _, client := range clients[drivers[dp.driverIndex].Name] {
-						c = client
-						break
-					}
-
+					c := clients[drivers[dp.driverIndex].Name].ChosenNode.BuildKitClient
 					var statusCh chan *client.SolveStatus
 					if pw != nil {
 						pw = progress.ResetTime(pw)

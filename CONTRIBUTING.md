@@ -25,6 +25,17 @@ make build
 sudo make install
 ```
 
+The proxy image version is baked into the CLI, and derived from your local git repo state.  When developing locally, this can lead to the builder failing to start due to a missing proxy image.  The simplest option is to override the proxy image to use an official published image, then you can build your local image with the builder.  After you build the image, then your local CLI will create functional builders as the image is present in the local runtime.
+
+```
+# Force the builder to use an existing published proxy image
+kubectl buildkit create --proxy-image ghcr.io/vmware-tanzu/buildkit-proxy:v0.2.0
+
+# Use the builder you just created to build the local image
+make image
+```
+
+
 To run the **unit tests**, run
 ```
 make test
@@ -44,6 +55,18 @@ Hint: find the current test suites with `grep "func Test" integration/suites/*.g
 To check your code for **lint/style consistency**, run
 ```
 make lint
+```
+
+If you have a custom buildkit image you want to test with, (e.g. `docker.io/moby/buildkit:local`)
+you can pass this to the integration tests (excluding "default" buidler tests) with:
+```
+make integration TEST_ALT_BUILDKIT_IMAGE=docker.io/moby/buildkit:local
+```
+
+### Docker Hub Rate Limiting
+The Makefile for this project has an optional prefix variable set up to allow use of a Docker Hub Proxy to mitigate rate limiting.  For example, if you use Harbor, this guide can help you set up a proxy for your organization: https://tanzu.vmware.com/developer/guides/harbor-as-docker-proxy/ 
+```
+export DOCKER_HUB_LIBRARY_PROXY_CACHE=registry.acme.com/dockerhub-proxy-cache/library/
 ```
 
 ## Reporting Issues

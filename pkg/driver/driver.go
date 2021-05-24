@@ -18,6 +18,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	pb "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/proxy/proto"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 )
 
@@ -117,6 +118,7 @@ type NodeClient struct {
 	NodeName       string
 	ClusterAddr    string
 	BuildKitClient *client.Client
+	ProxyClient    *pb.ProxyClient // nil if running in rootless mode
 }
 
 func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, error) {

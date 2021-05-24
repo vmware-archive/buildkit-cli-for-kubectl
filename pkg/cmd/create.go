@@ -3,10 +3,12 @@
 package commands
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes"
@@ -28,6 +30,7 @@ const (
 type createOptions struct {
 	name                string
 	image               string
+	proxyImage          string
 	runtime             string
 	containerdSock      string
 	containerdNamespace string
@@ -69,7 +72,6 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 	// TODO: consider swapping this out and passing the createOptions directly instead of
 	//       using a hashmap
 	driverOpts := map[string]string{
-		"image":                in.image,
 		"replicas":             strconv.Itoa(in.replicas),
 		"rootless":             strconv.FormatBool(in.rootless),
 		"loadbalance":          in.loadbalance,
@@ -81,6 +83,12 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 		"custom-config":        in.customConfig,
 		"env":                  strings.Join(in.envs, ";"),
 	}
+	if in.image != "" {
+		driverOpts["image"] = in.image
+	}
+	if in.proxyImage != "" {
+		driverOpts["proxy-image"] = in.proxyImage
+	}
 
 	d, err := driver.GetDriver(ctx, in.name, driverFactory, rootOpts.KubeClientConfig, flags, in.configFile, driverOpts, "" /*contextPathHash*/)
 	if err != nil {
@@ -88,6 +96,8 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 	}
 
 	pw := progress.NewPrinter(ctx, os.Stderr, in.progress)
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	defer cancel()
 	_, err = driver.Boot(ctx, d, pw)
 	if err != nil {
 		return err
@@ -133,6 +143,7 @@ Driver Specific Usage:
 	flags.StringArrayVar(&options.platform, "platform", []string{}, "Fixed platforms for current node")
 	flags.StringVar(&options.progress, "progress", "auto", "Set type of progress output [auto, plain, tty]. Use plain to show container output")
 	flags.StringVar(&options.image, "image", "", fmt.Sprintf("Specify an alternate buildkit image (default: %s)", version.DefaultImage))
+	flags.StringVar(&options.proxyImage, "proxy-image", "", fmt.Sprintf("Specify an alternate proxy image (default: %s)", version.GetProxyImage()))
 	flags.StringVar(&options.runtime, "runtime", "auto", "Container runtime used by cluster [auto, docker, containerd]")
 	flags.StringVar(&options.containerdSock, "containerd-sock", kubernetes.DefaultContainerdSockPath, "Path to the containerd.sock on the host")
 	flags.StringVar(&options.containerdNamespace, "containerd-namespace", kubernetes.DefaultContainerdNamespace, "Containerd namespace to build images in")

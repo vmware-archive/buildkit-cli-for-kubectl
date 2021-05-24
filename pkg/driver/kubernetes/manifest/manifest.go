@@ -4,7 +4,9 @@ package manifest
 
 import (
 	"fmt"
+	"strings"
 
+	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/proxy"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/version"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +17,7 @@ type DeploymentOpt struct {
 	Namespace              string
 	Name                   string
 	Image                  string
+	ProxyImage             string
 	Replicas               int
 	BuildkitFlags          []string
 	Rootless               bool
@@ -66,6 +69,15 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 	replicas := int32(opt.Replicas)
 	privileged := true
 	args := opt.BuildkitFlags
+	proxyArgs := []string{
+		"serve",
+	}
+	for _, arg := range args {
+		if strings.Contains(arg, "--debug") {
+			proxyArgs = append(proxyArgs, "--debug")
+		}
+	}
+
 	d := &appsv1.Deployment{
 		TypeMeta: metav1.TypeMeta{
 			APIVersion: appsv1.SchemeGroupVersion.String(),
@@ -107,6 +119,38 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 									Name:      "buildkitd-config",
 									MountPath: "/etc/buildkit/",
 								},
+								{
+									Name:      "buildkitd-socks",
+									MountPath: "/run/buildkit/",
+								},
+							},
+						},
+						{
+							Name:  proxy.ContainerName,
+							Image: opt.ProxyImage,
+							SecurityContext: &corev1.SecurityContext{
+								Privileged: &privileged,
+							},
+							Args: proxyArgs,
+							/* TODO route this through the proxy
+							ReadinessProbe: &corev1.Probe{
+								Handler: corev1.Handler{
+									Exec: &corev1.ExecAction{
+										Command: []string{"buildctl", "debug", "workers"},
+									},
+								},
+							},
+							*/
+							VolumeMounts: []corev1.VolumeMount{
+								{
+									Name:      "buildkitd-socks",
+									MountPath: "/run/buildkit/",
+								},
+							},
+							Ports: []corev1.ContainerPort{
+								{
+									ContainerPort: proxy.PortNumber,
+								},
 							},
 							Env: environments,
 						},
@@ -122,6 +166,12 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 								},
 							},
 						},
+						{
+							Name: "buildkitd-socks",
+							VolumeSource: corev1.VolumeSource{
+								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							},
+						},
 					},
 				},
 			},
@@ -131,7 +181,61 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 		if err := toRootless(d); err != nil {
 			return nil, err
 		}
+	} else {
+		/*
+			Combinations:
+
+			RUNTIME		WORKER BACKEND		BEHAVIOR
+			--------------------------------
+			docker		runc				Image transferred at end over filesend
+			containerd	runc				Image ~lost?  May need to change Export pattern?
+			containerd	containerd			Image auto-loaded into local containerd
+		*/
+		switch opt.ContainerRuntime {
+		case "docker":
+			d.Spec.Template.Spec.Containers[1].Args = append(d.Spec.Template.Spec.Containers[1].Args,
+				"--dockerd",
+				"/run/docker.sock",
+			)
+			d.Spec.Template.Spec.Containers[1].VolumeMounts = append(
+				d.Spec.Template.Spec.Containers[1].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      "docker-sock",
+					MountPath: "/run/docker.sock",
+				},
+			)
+		case "containerd":
+			d.Spec.Template.Spec.Containers[1].Args = append(d.Spec.Template.Spec.Containers[1].Args,
+				"--containerd",
+				"/run/containerd/containerd.sock",
+			)
+			d.Spec.Template.Spec.Containers[1].VolumeMounts = append(
+				d.Spec.Template.Spec.Containers[1].VolumeMounts,
+				corev1.VolumeMount{
+					Name:      "containerd-sock",
+					MountPath: "/run/containerd/containerd.sock",
+				},
+			)
+			hostPathSocket := corev1.HostPathSocket
+			d.Spec.Template.Spec.Volumes = append(
+				d.Spec.Template.Spec.Volumes,
+				corev1.Volume{
+					Name: "containerd-sock",
+					VolumeSource: corev1.VolumeSource{
+						HostPath: &corev1.HostPathVolumeSource{
+							Path: opt.ContainerdSockHostPath,
+							Type: &hostPathSocket,
+						},
+					},
+				})
+
+		default:
+			return nil, fmt.Errorf("unrecognized runtime: %s", opt.ContainerRuntime)
+		}
 	}
+
+	// TODO - potential corner case - "runc" worker without a specified container runtime...
+	// (test the permutations to ensure it's not a hole)
 
 	if opt.Worker == "containerd" {
 		if err := toContainerdWorker(d, opt); err != nil {
@@ -162,6 +266,10 @@ func toRootless(d *appsv1.Deployment) error {
 	}
 	d.Spec.Template.ObjectMeta.Annotations["container.apparmor.security.beta.kubernetes.io/"+containerName] = "unconfined"
 	d.Spec.Template.ObjectMeta.Annotations["container.seccomp.security.alpha.kubernetes.io/"+containerName] = "unconfined"
+
+	// For now, get rid of the proxy container, but in the future we might consider a rootless builder + runtime proxy...
+	d.Spec.Template.Spec.Containers = d.Spec.Template.Spec.Containers[0:1]
+
 	return nil
 }
 
@@ -177,10 +285,6 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 	mountPropagationBidirectional := corev1.MountPropagationBidirectional
 	d.Spec.Template.Spec.Containers[0].VolumeMounts = append(
 		d.Spec.Template.Spec.Containers[0].VolumeMounts,
-		corev1.VolumeMount{
-			Name:      "containerd-sock",
-			MountPath: "/run/containerd/containerd.sock",
-		},
 		corev1.VolumeMount{
 			Name:             "var-lib-buildkit",
 			MountPath:        buildkitRoot,
@@ -207,20 +311,11 @@ func toContainerdWorker(d *appsv1.Deployment, opt *DeploymentOpt) error {
 			MountPropagation: &mountPropagationBidirectional,
 		},
 	)
-	hostPathSocket := corev1.HostPathSocket
+
 	hostPathDirectory := corev1.HostPathDirectory
 	hostPathDirectoryOrCreate := corev1.HostPathDirectoryOrCreate
 	d.Spec.Template.Spec.Volumes = append(
 		d.Spec.Template.Spec.Volumes,
-		corev1.Volume{
-			Name: "containerd-sock",
-			VolumeSource: corev1.VolumeSource{
-				HostPath: &corev1.HostPathVolumeSource{
-					Path: opt.ContainerdSockHostPath,
-					Type: &hostPathSocket,
-				},
-			},
-		},
 		// TODO - consider making this ~unique so multiple buildkit builders
 		// can co-exist on a single node in a multi-user environment
 		corev1.Volume{

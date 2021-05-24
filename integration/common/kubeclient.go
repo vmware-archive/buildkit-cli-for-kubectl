@@ -33,11 +33,12 @@ func GetKubeClientset() (*kubernetes.Clientset, string, error) {
 	return clientset, ns, err
 }
 
-func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace string, clientset *kubernetes.Clientset) error {
+func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace, nodeName string, clientset *kubernetes.Clientset) error {
 	podClient := clientset.CoreV1().Pods(namespace)
 	eventClient := clientset.CoreV1().Events(namespace)
-	logrus.Infof("starting pod %s for image: %s", name, imageName)
+	logrus.Infof("starting pod %s for image %s on node '%s'", name, imageName, nodeName)
 	// Start the pod
+	var zero64 int64
 	pod, err := podClient.Create(ctx,
 		&v1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -45,6 +46,7 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 			},
 
 			Spec: corev1.PodSpec{
+				NodeName: nodeName,
 				Containers: []corev1.Container{
 					{
 						Name:            name,
@@ -53,6 +55,7 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 						ImagePullPolicy: v1.PullNever,
 					},
 				},
+				TerminationGracePeriodSeconds: &zero64,
 			},
 		},
 		metav1.CreateOptions{},
@@ -131,20 +134,38 @@ func RunSimpleBuildImageAsPod(ctx context.Context, name, imageName, namespace st
 // GetRuntime will return the runtime detected in the cluster
 // Assumes a common runtime (first node found is returned)
 func GetRuntime(ctx context.Context, clientset *kubernetes.Clientset) (string, error) {
-	nodeClient := clientset.CoreV1().Nodes()
-	nodes, err := nodeClient.List(ctx, metav1.ListOptions{})
+	nodes, err := GetNodes(ctx, clientset)
 	if err != nil {
 		return "", err
 	}
-	if len(nodes.Items) > 0 {
-		return nodes.Items[0].Status.NodeInfo.ContainerRuntimeVersion, nil
+	if len(nodes) > 0 {
+		return nodes[0].Status.NodeInfo.ContainerRuntimeVersion, nil
 	}
 	return "", fmt.Errorf("unable to retrieve node runtimes")
-
 }
 
-// LogBuilderLogs attempts to replay the log messages from the builder(s)
-func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) {
+func GetNodes(ctx context.Context, clientset *kubernetes.Clientset) ([]v1.Node, error) {
+	nodeClient := clientset.CoreV1().Nodes()
+	nodes, err := nodeClient.List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return nodes.Items, nil
+}
+
+func GetBuilderNodes(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) ([]string, error) {
+	nodeNames := []string{}
+	pods, err := getBuilderPods(ctx, name, namespace, clientset)
+	if err != nil {
+		return nil, err
+	}
+	for _, pod := range pods {
+		nodeNames = append(nodeNames, pod.Spec.NodeName)
+	}
+	return nodeNames, nil
+}
+
+func getBuilderPods(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) ([]v1.Pod, error) {
 	podClient := clientset.CoreV1().Pods(namespace)
 	labelSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
@@ -154,29 +175,40 @@ func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kube
 	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
 	if err != nil {
 		logrus.Errorf("should not happen: %s", err)
-		return
+		return nil, err
 	}
 	listOpts := metav1.ListOptions{
 		LabelSelector: selector.String(),
 	}
 	podList, err := podClient.List(ctx, listOpts)
 	if err != nil {
-		logrus.Warnf("failed to get builder pods for logging: %s", err)
+		logrus.Warnf("failed to get builder pods: %s", err)
+		return nil, err
+	}
+	return podList.Items, nil
+}
+
+// LogBuilderLogs attempts to replay the log messages from the builder(s)
+func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) {
+	pods, err := getBuilderPods(ctx, name, namespace, clientset)
+	if err != nil {
 		return
 	}
-	logrus.Infof("Detected %d pods for builder %s - gathering logs", len(podList.Items), name)
+	logrus.Infof("Detected %d pods for builder %s - gathering logs", len(pods), name)
 	logrus.Infof("--- BEGIN BUILDER LOGS ---")
-
-	for _, pod := range podList.Items {
-		logrus.Infof("%s labels %#v", pod.Name, pod.Labels)
-		req := podClient.GetLogs(pod.Name, &v1.PodLogOptions{})
-		buf, err := req.DoRaw(ctx)
-		if err != nil {
-			logrus.Errorf("failed to get logs for %s: %s", pod.Name, err)
-		}
-		for _, line := range strings.Split(string(buf), "\n") {
-			// Don't use logrus since that results in double levels and conflicting timestamps
-			fmt.Printf("pod=\"%s\" %s\n", pod.Name, line)
+	podClient := clientset.CoreV1().Pods(namespace)
+	for _, pod := range pods {
+		for _, ctr := range pod.Spec.Containers {
+			logrus.Infof("%s labels %#v", pod.Name, pod.Labels)
+			req := podClient.GetLogs(pod.Name, &v1.PodLogOptions{Container: ctr.Name})
+			buf, err := req.DoRaw(ctx)
+			if err != nil {
+				logrus.Errorf("failed to get logs for %s: %s", pod.Name, err)
+			}
+			for _, line := range strings.Split(string(buf), "\n") {
+				// Don't use logrus since that results in double levels and conflicting timestamps
+				fmt.Printf("pod=\"%s\" container=\"%s\" %s\n", pod.Name, ctr.Name, line)
+			}
 		}
 	}
 	logrus.Infof("--- END BUILDER LOGS ---")
