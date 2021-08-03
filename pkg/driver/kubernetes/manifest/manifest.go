@@ -24,6 +24,7 @@ type DeploymentOpt struct {
 	DockerSockHostPath     string
 	ContainerRuntime       string
 	CustomConfig           string
+	Environments		   map[string]string
 }
 
 const (
@@ -46,9 +47,19 @@ func annotations(opt *DeploymentOpt) map[string]string {
 	}
 }
 
+func environments(opt *DeploymentOpt) []corev1.EnvVar {
+	envs := make([]corev1.EnvVar, 0, len(opt.Environments))
+	for name, value := range opt.Environments {
+		envs = append(envs, corev1.EnvVar{Name: name, Value: value})
+	}	
+
+	return envs
+}
+
 func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 	labels := labels(opt)
 	annotations := annotations(opt)
+	environments := environments(opt)
 	replicas := int32(opt.Replicas)
 	privileged := true
 	args := opt.BuildkitFlags
@@ -94,6 +105,7 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 									MountPath: "/etc/buildkit/",
 								},
 							},
+							Env: environments,
 						},
 					},
 					Volumes: []corev1.Volume{

@@ -4,6 +4,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -234,7 +235,25 @@ func buildTargets(ctx context.Context, kubeClientConfig clientcmd.ClientConfig, 
 	if driverName == "" {
 		driverName = "buildkit"
 	}
-	d, err := driver.GetDriver(ctx, driverName, nil, kubeClientConfig, []string{} /* TODO what BuildkitFlags are these? */, "" /* unused config file */, map[string]string{} /* DriverOpts unused */, contextPathHash)
+
+	// Check if need to set proxy on builder
+	listEnvToCheck := []string{
+		"http_proxy",
+		"https_proxy",
+		"no_proxy",
+		"HTTP_PROXY",
+		"HTTPS_PROXY",
+		"NO_PROXY",
+	}
+	envs := make([]string, 0, 0)
+	for _, env := range listEnvToCheck {
+		val, isSet := os.LookupEnv(env)
+		if isSet {
+			envs = append(envs, fmt.Sprintf("%s=%s", env, val))
+		}
+	}
+
+	d, err := driver.GetDriver(ctx, driverName, nil, kubeClientConfig, []string{} /* TODO what BuildkitFlags are these? */, "" /* unused config file */, map[string]string{"env": strings.Join(envs, ";")}, contextPathHash)
 	if err != nil {
 		return err
 	}

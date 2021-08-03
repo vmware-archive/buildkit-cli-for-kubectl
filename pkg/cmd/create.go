@@ -42,6 +42,7 @@ type createOptions struct {
 	configFile          string
 	progress            string
 	customConfig        string
+	envs                []string
 }
 
 func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *rootOptions) error {
@@ -78,6 +79,7 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 		"docker-sock":          in.dockerSock,
 		"runtime":              in.runtime,
 		"custom-config":        in.customConfig,
+		"env":                  strings.Join(in.envs, ";"),
 	}
 
 	d, err := driver.GetDriver(ctx, in.name, driverFactory, rootOpts.KubeClientConfig, flags, in.configFile, driverOpts, "" /*contextPathHash*/)
@@ -140,6 +142,7 @@ Driver Specific Usage:
 	flags.StringVar(&options.loadbalance, "loadbalance", "random", "Load balancing strategy [random, sticky]")
 	flags.StringVar(&options.worker, "worker", "auto", "Worker backend [auto, runc, containerd]")
 	flags.StringVar(&options.customConfig, "custom-config", "", "Name of a ConfigMap containing custom files (e.g., certs), mounted in /etc/config/ - use 'kubectl create configmap ... --from-file=...'")
+	flags.StringArrayVar(&options.envs, "env", []string{}, "Environment variable to add when create builder, like http_proxy=http://my-proxy.com:8080")
 
 	return cmd
 }
