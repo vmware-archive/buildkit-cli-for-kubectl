@@ -245,7 +245,7 @@ func buildTargets(ctx context.Context, kubeClientConfig clientcmd.ClientConfig, 
 		"HTTPS_PROXY",
 		"NO_PROXY",
 	}
-	envs := make([]string, 0, 0)
+	envs := make([]string, 0)
 	for _, env := range listEnvToCheck {
 		val, isSet := os.LookupEnv(env)
 		if isSet {

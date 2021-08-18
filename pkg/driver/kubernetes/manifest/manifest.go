@@ -24,7 +24,7 @@ type DeploymentOpt struct {
 	DockerSockHostPath     string
 	ContainerRuntime       string
 	CustomConfig           string
-	Environments		   map[string]string
+	Environments           map[string]string
 }
 
 const (
@@ -51,7 +51,7 @@ func environments(opt *DeploymentOpt) []corev1.EnvVar {
 	envs := make([]corev1.EnvVar, 0, len(opt.Environments))
 	for name, value := range opt.Environments {
 		envs = append(envs, corev1.EnvVar{Name: name, Value: value})
-	}	
+	}
 
 	return envs
 }
