@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -183,11 +182,10 @@ func (d *Driver) initDriverFromConfig() error {
 			deploymentOpt.CustomConfig = v
 		case "env":
 			// Split over comma for multiple key/value
-			re := regexp.MustCompile(`([^=]+)=([^=]+)`)
 			for _, item := range strings.Split(v, ";") {
-				m := re.FindStringSubmatch(strings.TrimSpace(item))
-				if len(m) == 3 {
-					deploymentOpt.Environments[m[1]] = m[2]
+				m := strings.SplitN(item, "=", 2)
+				if len(m) == 2 {
+					deploymentOpt.Environments[m[0]] = m[1]
 				}
 			}
 		default:
