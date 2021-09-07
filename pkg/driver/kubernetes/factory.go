@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"strconv"
+	"strings"
 	"text/template"
 
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
@@ -118,6 +119,7 @@ func (d *Driver) initDriverFromConfig() error {
 		ContainerdSockHostPath: DefaultContainerdSockPath,
 		ContainerdNamespace:    DefaultContainerdNamespace,
 		DockerSockHostPath:     DefaultDockerSockPath,
+		Environments:           make(map[string]string),
 	}
 
 	imageOverride := ""
@@ -178,6 +180,14 @@ func (d *Driver) initDriverFromConfig() error {
 			deploymentOpt.ContainerRuntime = v
 		case "custom-config":
 			deploymentOpt.CustomConfig = v
+		case "env":
+			// Split over comma for multiple key/value
+			for _, item := range strings.Split(v, ";") {
+				m := strings.SplitN(item, "=", 2)
+				if len(m) == 2 {
+					deploymentOpt.Environments[m[0]] = m[1]
+				}
+			}
 		default:
 			return errors.Errorf("invalid driver option %s for driver %s", k, DriverName)
 		}
