@@ -86,10 +86,15 @@ jobs:
         set -x
         sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
         echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo swapoff -a
+        # Note: Default docker setup (cgroupfs) is incompatible with default kubelet (systemd) so one has to be changed
+        #       since k8s recommends against cgroupfs, we'll use systemd
+        sudo sh -c "echo '{\"exec-opts\": [\"native.cgroupdriver=systemd\"]}' > /etc/docker/daemon.json"
+        sudo systemctl restart docker
         sudo apt-get update
         sudo apt-get install -y kubelet kubeadm kubectl
-        sudo swapoff -a
-        sudo kubeadm init
+        docker info
+        sudo kubeadm init -v 5 || (sudo journalctl -u kubelet; exit 1)
         mkdir -p $HOME/.kube/
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $USER $HOME/.kube/config
@@ -97,7 +102,6 @@ jobs:
         kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
         kubectl wait --for=condition=ready --timeout=30s node --all
         kubectl get nodes -o wide
-        docker version
 
     - name: Run integration tests
       run: make integration EXTRA_GO_TEST_FLAGS=-v
