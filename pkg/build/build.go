@@ -134,11 +134,11 @@ func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw prog
 		clients[drivers[i].Name] = map[string]*client.Client{}
 		func(i int) {
 			eg.Go(func() error {
-				c, chosenNodeName, err := driver.Boot(ctx, drivers[i].Driver, pw)
+				builderClients, err := driver.Boot(ctx, drivers[i].Driver, pw)
 				if err != nil {
 					return err
 				}
-				clients[drivers[i].Name][chosenNodeName] = c
+				clients[drivers[i].Name][builderClients.ChosenNode.NodeName] = builderClients.ChosenNode.BuildKitClient
 				return nil
 			})
 		}(i)

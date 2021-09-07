@@ -58,6 +58,9 @@ func environments(opt *DeploymentOpt) []corev1.EnvVar {
 
 func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 	labels := labels(opt)
+	selectorLabels := map[string]string{
+		"app": labels["app"],
+	}
 	annotations := annotations(opt)
 	environments := environments(opt)
 	replicas := int32(opt.Replicas)
@@ -77,7 +80,7 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 		Spec: appsv1.DeploymentSpec{
 			Replicas: &replicas,
 			Selector: &metav1.LabelSelector{
-				MatchLabels: labels,
+				MatchLabels: selectorLabels,
 			},
 			Template: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{

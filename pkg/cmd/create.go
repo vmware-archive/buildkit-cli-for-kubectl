@@ -88,7 +88,7 @@ func runCreate(streams genericclioptions.IOStreams, in createOptions, rootOpts *
 	}
 
 	pw := progress.NewPrinter(ctx, os.Stderr, in.progress)
-	_, _, err = driver.Boot(ctx, d, pw)
+	_, err = driver.Boot(ctx, d, pw)
 	if err != nil {
 		return err
 	}

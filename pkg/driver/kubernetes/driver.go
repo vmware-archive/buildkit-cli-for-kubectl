@@ -7,12 +7,10 @@ import (
 	"fmt"
 	"net"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/execconn"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/manifest"
@@ -22,11 +20,11 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	clientappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	clientcorev1 "k8s.io/client-go/kubernetes/typed/core/v1"
+	"k8s.io/client-go/rest"
 )
 
 const (
@@ -79,29 +77,6 @@ type Driver struct {
 
 func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 	return progress.Wrap("[internal] booting buildkit", l, func(sub progress.SubLogger) error {
-		_, err := d.configMapClient.Get(ctx, d.configMap.Name, metav1.GetOptions{})
-
-		if err != nil && kubeerrors.IsNotFound(err) {
-			// Doesn't exist, create it
-			_, err = d.configMapClient.Create(ctx, d.configMap, metav1.CreateOptions{})
-		} else if err != nil {
-			return errors.Wrapf(err, "configmap get error for %q", d.configMap.Name)
-		} else if d.userSpecifiedConfig {
-			// err was nil, thus it already exists, and user passed a new config, so update it
-			_, err = d.configMapClient.Update(ctx, d.configMap, metav1.UpdateOptions{})
-		}
-		if err != nil {
-			return errors.Wrapf(err, "configmap error for buildkitd.toml for %q", d.configMap.Name)
-		}
-
-		_, err = d.deploymentClient.Get(ctx, d.deployment.Name, metav1.GetOptions{})
-		if err != nil {
-			// TODO: return err if err != ErrNotFound
-			_, err = d.deploymentClient.Create(ctx, d.deployment, metav1.CreateOptions{})
-			if err != nil {
-				return errors.Wrapf(err, "error while calling deploymentClient.Create for %q", d.deployment.Name)
-			}
-		}
 		return sub.Wrap(
 			fmt.Sprintf("waiting for %d pods to be ready for %s", d.minReplicas, d.deployment.Name),
 			func() error {
@@ -122,213 +97,16 @@ func isChildOf(objectMeta metav1.ObjectMeta, parentUID string) bool {
 	return false
 }
 
+// Idempotently create and wait for the builder to start up
 func (d *Driver) wait(ctx context.Context, sub progress.SubLogger) error {
-	var (
-		err           error
-		depl          *appsv1.Deployment
-		deploymentUID string
-		replicaUID    string
-		refUID        *string
-		refKind       *string
-	)
-	reportedEvents := map[string]interface{}{}
-
-	depl, err = d.deploymentClient.Get(ctx, d.deployment.Name, metav1.GetOptions{})
-	for try := 0; try < 100; try++ {
-		if err == nil {
-			if depl.Status.ReadyReplicas >= int32(d.minReplicas) {
-				sub.Log(1, []byte(fmt.Sprintf("All %d replicas for %s online\n", d.minReplicas, d.deployment.Name)))
-				return nil
-			}
-			deploymentUID = string(depl.ObjectMeta.GetUID())
-
-			// Check to see if we have any underlying errors
-			// TODO - consider moving this to a helper routine
-			labelSelector := &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"app": d.deployment.ObjectMeta.Name,
-				},
-			}
-			selector, err2 := metav1.LabelSelectorAsSelector(labelSelector)
-			if err2 != nil {
-				return err2
-			}
-			listOpts := metav1.ListOptions{
-				LabelSelector: selector.String(),
-			}
-
-			// Check to see if we have any replicaset errors
-			replicas, err2 := d.replicaSetClient.List(ctx, listOpts) // TODO - consider a get?
-			if err2 != nil {
-				return err2
-			}
-
-			// TODO DRY this out with the pod event handling below
-			for i := range replicas.Items {
-				replica := &replicas.Items[i]
-				if !isChildOf(replica.ObjectMeta, deploymentUID) {
-					continue
-				}
-				replicaUID = string(replica.ObjectMeta.GetUID())
-				stringRefUID := string(replica.GetUID())
-				if len(stringRefUID) > 0 {
-					refUID = &stringRefUID
-				}
-				stringRefKind := replica.Kind
-				if len(stringRefKind) > 0 {
-					refKind = &stringRefKind
-				}
-
-				selector := d.eventClient.GetFieldSelector(&replica.Name, &replica.Namespace, refKind, refUID)
-				options := metav1.ListOptions{FieldSelector: selector.String()}
-				events, err2 := d.eventClient.List(ctx, options)
-				if err2 != nil {
-					return err2
-				}
-
-				for _, event := range events.Items {
-					if event.InvolvedObject.UID != replica.ObjectMeta.UID {
-						logrus.Infof("XXX SHOULD NOT BE HERE!") // TODO if this doesn't show up, this check can be removed as the selector above is sufficient
-						continue
-					}
-					// TODO - better formatting alignment...
-					msg := fmt.Sprintf("%s \t%s \t%s \t%s\n",
-						event.Type,
-						replica.Name,
-						event.Reason,
-						event.Message,
-					)
-					if _, alreadyProcessed := reportedEvents[msg]; alreadyProcessed {
-						continue
-					}
-					reportedEvents[msg] = struct{}{}
-					sub.Log(1, []byte(msg))
-					// TODO handle known failure modes here...
-				}
-			}
-
-			podList, err2 := d.podClient.List(ctx, listOpts)
-			if err2 != nil {
-				return err2
-			}
-		pods:
-			for i := range podList.Items {
-				pod := &podList.Items[i]
-				if !isChildOf(pod.ObjectMeta, replicaUID) {
-					continue
-				}
-
-				stringRefUID := string(pod.GetUID())
-				if len(stringRefUID) > 0 {
-					refUID = &stringRefUID
-				}
-				stringRefKind := pod.Kind
-				if len(stringRefKind) > 0 {
-					refKind = &stringRefKind
-				}
-				selector := d.eventClient.GetFieldSelector(&pod.Name, &pod.Namespace, refKind, refUID)
-				options := metav1.ListOptions{FieldSelector: selector.String()}
-				events, err2 := d.eventClient.List(ctx, options)
-				if err2 != nil {
-					return err2
-				}
-
-				for _, event := range events.Items {
-					if event.InvolvedObject.UID != pod.ObjectMeta.UID {
-						continue
-					}
-					// TODO - better formatting alignment...
-					msg := fmt.Sprintf("%s \t%s \t%s \t%s\n",
-						event.Type,
-						pod.Name,
-						event.Reason,
-						event.Message,
-					)
-					if _, alreadyProcessed := reportedEvents[msg]; alreadyProcessed {
-						continue
-					}
-					reportedEvents[msg] = struct{}{}
-					sub.Log(1, []byte(msg))
-
-					if event.Type == "Normal" {
-						continue
-					}
-					// Handle known events that represent failed default deployments.
-					if event.Reason == "FailedMount" && strings.Contains(event.Message, "is not a socket file") {
-						if d.userSpecifiedRuntime {
-							return fmt.Errorf("pod failed to initialize - did you pick the correct runtime? - %s", event.Message)
-						}
-						// Flip the logic for what the default runtime is, and re-init, then re-bootstrap and try once more.
-						attemptedRuntime := DefaultContainerRuntime
-						runtime := ""
-						switch attemptedRuntime {
-						case "containerd":
-							runtime = "docker"
-						case "docker":
-							runtime = "containerd"
-						default:
-							return fmt.Errorf("unexpected runtime: %s", attemptedRuntime) // not reached
-						}
-
-						sub.Log(1, []byte(fmt.Sprintf("WARN: initial attempt to deploy configured for the %s runtime failed, retrying with %s\n", attemptedRuntime, runtime)))
-						d.InitConfig.DriverOpts["runtime"] = runtime
-						d.InitConfig.DriverOpts["worker"] = "auto"
-						err = d.initDriverFromConfig() // This will toggle userSpecifiedRuntime to true to prevent cycles
-						if err != nil {
-							return err
-						}
-						// Instead of updating, we'll just delete the deployment and re-create
-						if err := d.deploymentClient.Delete(ctx, d.deployment.Name, metav1.DeleteOptions{}); err != nil {
-							return errors.Wrapf(err, "error while calling deploymentClient.Delete for %q", d.deployment.Name)
-						}
-
-						// Wait for the pods to wind down before re-deploying...
-						for ; try < 100; try++ {
-							remainingPods := 0
-							podList, err2 := d.podClient.List(ctx, listOpts)
-							if err2 != nil {
-								return err2
-							}
-							for _, pod := range podList.Items {
-								if !isChildOf(pod.ObjectMeta, replicaUID) {
-									continue
-								}
-								remainingPods++
-							}
-							if remainingPods == 0 {
-								break
-							}
-
-							<-time.After(time.Duration(100+try*20) * time.Millisecond)
-						}
-						// TODO instead of a dumb sleep, consider waiting for the pods to unwind first to avoid potential
-						// races
-						time.Sleep(2 * time.Second)
-						// Note, we're not re-trying the config creation, just the deployment
-						depl, err = d.deploymentClient.Create(ctx, d.deployment, metav1.CreateOptions{})
-						if err != nil {
-							// If we fail to re-create, bail out entirely
-							return fmt.Errorf("failed to redeploy with updated settings: %w", err)
-						}
-						// Keep on waiting and hope this variation works.
-						break pods
-					}
-					// TODO - add other common failure modes here...
-				}
-			}
-
-			err = errors.Errorf("expected %d replicas to be ready, got %d",
-				d.minReplicas, depl.Status.ReadyReplicas)
-		} else {
-			depl, err = d.deploymentClient.Get(ctx, d.deployment.Name, metav1.GetOptions{})
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Duration(100+try*20) * time.Millisecond):
-		}
+	// Create the config map first
+	err := d.createConfigMap(ctx, sub)
+	if err != nil {
+		return err
 	}
-	return err
+
+	// Now try to converge to a running builder
+	return d.createBuilder(ctx, sub, d.userSpecifiedRuntime)
 }
 
 func (d *Driver) Info(ctx context.Context) (*driver.Info, error) {
@@ -378,30 +156,59 @@ func (d *Driver) Rm(ctx context.Context, force bool) error {
 	return nil
 }
 
-func (d *Driver) Client(ctx context.Context) (*client.Client, string, error) {
+func (d *Driver) Clients(ctx context.Context) (*driver.BuilderClients, error) {
 	restClient := d.clientset.CoreV1().RESTClient()
 	restClientConfig, err := d.KubeClientConfig.ClientConfig()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	pod, err := d.podChooser.ChoosePod(ctx)
+	pod, otherPods, err := d.podChooser.ChoosePod(ctx)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if len(pod.Spec.Containers) == 0 {
-		return nil, "", errors.Errorf("pod %s does not have any container", pod.Name)
+		return nil, errors.Errorf("pod %s does not have any container", pod.Name)
 	}
+	chosenNode, err := buildNodeClient(ctx, pod, restClient, restClientConfig)
+	if err != nil {
+		return nil, err
+	}
+	res := &driver.BuilderClients{
+		ChosenNode: *chosenNode,
+		OtherNodes: []driver.NodeClient{},
+	}
+	for _, pod := range otherPods {
+		otherNode, err := buildNodeClient(ctx, pod, restClient, restClientConfig)
+		// TODO - consider allowing partial failure if a node is down but others are available...
+		if err != nil {
+			return nil, err
+		}
+		res.OtherNodes = append(res.OtherNodes, *otherNode)
+	}
+	return res, err
+}
+
+func buildNodeClient(ctx context.Context, pod *corev1.Pod, restClient rest.Interface, restClientConfig *rest.Config) (*driver.NodeClient, error) {
 	containerName := pod.Spec.Containers[0].Name
 	cmd := []string{"buildctl", "dial-stdio"}
+	nodeClient := &driver.NodeClient{
+		NodeName:    pod.Name,
+		ClusterAddr: pod.Status.PodIP,
+	}
 	conn, err := execconn.ExecConn(restClient, restClientConfig,
 		pod.Namespace, pod.Name, containerName, cmd)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	client, err := client.New(ctx, "", client.WithDialer(func(string, time.Duration) (net.Conn, error) {
+
+	buildkitClient, err := client.New(ctx, "", client.WithDialer(func(string, time.Duration) (net.Conn, error) {
 		return conn, nil
 	}))
-	return client, pod.Name, err
+	if err != nil {
+		return nil, err
+	}
+	nodeClient.BuildKitClient = buildkitClient
+	return nodeClient, nil
 }
 
 // TODO debugging concurrent access problems
@@ -512,9 +319,9 @@ func (d *Driver) Features() map[driver.Feature]bool {
 		driver.MultiPlatform:      true, // Untested (needs multiple Driver instances)
 	}
 	// Query the pod to figure out the runtime
-
-	// TODO how will this work for multi-pod deployments?
-	pod, err := d.podChooser.ChoosePod(context.TODO())
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	pod, _, err := d.podChooser.ChoosePod(ctx)
 	if err == nil && len(pod.Spec.Containers) > 0 && !isRootless(pod.ObjectMeta.Labels["rootless"]) {
 		switch pod.ObjectMeta.Labels["runtime"] {
 		case "containerd":
