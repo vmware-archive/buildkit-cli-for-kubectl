@@ -141,7 +141,7 @@ func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, e
 				}
 			}); err != nil {
 				// Possibly another CLI running in parallel - random sleep then retry
-				RandSleep(1000)
+				RandSleep(100)
 				continue
 			}
 		}
