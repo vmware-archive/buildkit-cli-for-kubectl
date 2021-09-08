@@ -38,7 +38,6 @@ import (
 	"github.com/opencontainers/runc/libcontainer/user"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/pkg/errors"
-	"github.com/syndtr/gocapability/capability"
 )
 
 // SpecOpts sets spec specific information to a newly generated OCI spec
@@ -87,6 +86,21 @@ func setResources(s *Spec) {
 	if s.Windows != nil {
 		if s.Windows.Resources == nil {
 			s.Windows.Resources = &specs.WindowsResources{}
+		}
+	}
+}
+
+// nolint
+func setCPU(s *Spec) {
+	setResources(s)
+	if s.Linux != nil {
+		if s.Linux.Resources.CPU == nil {
+			s.Linux.Resources.CPU = &specs.LinuxCPU{}
+		}
+	}
+	if s.Windows != nil {
+		if s.Windows.Resources.CPU == nil {
+			s.Windows.Resources.CPU = &specs.WindowsCPUResources{}
 		}
 	}
 }
@@ -259,6 +273,28 @@ func WithMounts(mounts []specs.Mount) SpecOpts {
 	}
 }
 
+// WithoutMounts removes mounts
+func WithoutMounts(dests ...string) SpecOpts {
+	return func(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
+		var (
+			mounts  []specs.Mount
+			current = s.Mounts
+		)
+	mLoop:
+		for _, m := range current {
+			mDestination := filepath.Clean(m.Destination)
+			for _, dest := range dests {
+				if mDestination == dest {
+					continue mLoop
+				}
+			}
+			mounts = append(mounts, m)
+		}
+		s.Mounts = mounts
+		return nil
+	}
+}
+
 // WithHostNamespace allows a task to run inside the host's linux namespace
 func WithHostNamespace(ns specs.LinuxNamespaceType) SpecOpts {
 	return func(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
@@ -280,10 +316,7 @@ func WithLinuxNamespace(ns specs.LinuxNamespace) SpecOpts {
 		setLinux(s)
 		for i, n := range s.Linux.Namespaces {
 			if n.Type == ns.Type {
-				before := s.Linux.Namespaces[:i]
-				after := s.Linux.Namespaces[i+1:]
-				s.Linux.Namespaces = append(before, ns)
-				s.Linux.Namespaces = append(s.Linux.Namespaces, after...)
+				s.Linux.Namespaces[i] = ns
 				return nil
 			}
 		}
@@ -521,7 +554,7 @@ func WithUser(userstr string) SpecOpts {
 			}
 			f := func(root string) error {
 				if username != "" {
-					user, err := getUserFromPath(root, func(u user.User) bool {
+					user, err := UserFromPath(root, func(u user.User) bool {
 						return u.Name == username
 					})
 					if err != nil {
@@ -530,7 +563,7 @@ func WithUser(userstr string) SpecOpts {
 					uid = uint32(user.Uid)
 				}
 				if groupname != "" {
-					gid, err = getGIDFromPath(root, func(g user.Group) bool {
+					gid, err = GIDFromPath(root, func(g user.Group) bool {
 						return g.Name == groupname
 					})
 					if err != nil {
@@ -585,11 +618,11 @@ func WithUserID(uid uint32) SpecOpts {
 			if !isRootfsAbs(s.Root.Path) {
 				return errors.Errorf("rootfs absolute path is required")
 			}
-			user, err := getUserFromPath(s.Root.Path, func(u user.User) bool {
+			user, err := UserFromPath(s.Root.Path, func(u user.User) bool {
 				return u.Uid == int(uid)
 			})
 			if err != nil {
-				if os.IsNotExist(err) || err == errNoUsersFound {
+				if os.IsNotExist(err) || err == ErrNoUsersFound {
 					s.Process.User.UID, s.Process.User.GID = uid, 0
 					return nil
 				}
@@ -611,11 +644,11 @@ func WithUserID(uid uint32) SpecOpts {
 			return err
 		}
 		return mount.WithTempMount(ctx, mounts, func(root string) error {
-			user, err := getUserFromPath(root, func(u user.User) bool {
+			user, err := UserFromPath(root, func(u user.User) bool {
 				return u.Uid == int(uid)
 			})
 			if err != nil {
-				if os.IsNotExist(err) || err == errNoUsersFound {
+				if os.IsNotExist(err) || err == ErrNoUsersFound {
 					s.Process.User.UID, s.Process.User.GID = uid, 0
 					return nil
 				}
@@ -639,7 +672,7 @@ func WithUsername(username string) SpecOpts {
 				if !isRootfsAbs(s.Root.Path) {
 					return errors.Errorf("rootfs absolute path is required")
 				}
-				user, err := getUserFromPath(s.Root.Path, func(u user.User) bool {
+				user, err := UserFromPath(s.Root.Path, func(u user.User) bool {
 					return u.Name == username
 				})
 				if err != nil {
@@ -660,7 +693,7 @@ func WithUsername(username string) SpecOpts {
 				return err
 			}
 			return mount.WithTempMount(ctx, mounts, func(root string) error {
-				user, err := getUserFromPath(root, func(u user.User) bool {
+				user, err := UserFromPath(root, func(u user.User) bool {
 					return u.Name == username
 				})
 				if err != nil {
@@ -692,11 +725,11 @@ func WithAdditionalGIDs(userstr string) SpecOpts {
 			var username string
 			uid, err := strconv.Atoi(userstr)
 			if err == nil {
-				user, err := getUserFromPath(root, func(u user.User) bool {
+				user, err := UserFromPath(root, func(u user.User) bool {
 					return u.Uid == uid
 				})
 				if err != nil {
-					if os.IsNotExist(err) || err == errNoUsersFound {
+					if os.IsNotExist(err) || err == ErrNoUsersFound {
 						return nil
 					}
 					return err
@@ -759,29 +792,6 @@ func WithCapabilities(caps []string) SpecOpts {
 
 		return nil
 	}
-}
-
-// WithAllCapabilities sets all linux capabilities for the process
-var WithAllCapabilities = func(ctx context.Context, client Client, c *containers.Container, s *Spec) error {
-	return WithCapabilities(GetAllCapabilities())(ctx, client, c, s)
-}
-
-// GetAllCapabilities returns all caps up to CAP_LAST_CAP
-// or CAP_BLOCK_SUSPEND on RHEL6
-func GetAllCapabilities() []string {
-	last := capability.CAP_LAST_CAP
-	// hack for RHEL6 which has no /proc/sys/kernel/cap_last_cap
-	if last == capability.Cap(63) {
-		last = capability.CAP_BLOCK_SUSPEND
-	}
-	var caps []string
-	for _, cap := range capability.List() {
-		if cap > last {
-			continue
-		}
-		caps = append(caps, "CAP_"+strings.ToUpper(cap.String()))
-	}
-	return caps
 }
 
 func capsContain(caps []string, s string) bool {
@@ -854,9 +864,12 @@ func WithAmbientCapabilities(caps []string) SpecOpts {
 	}
 }
 
-var errNoUsersFound = errors.New("no users found")
+// ErrNoUsersFound can be returned from UserFromPath
+var ErrNoUsersFound = errors.New("no users found")
 
-func getUserFromPath(root string, filter func(user.User) bool) (user.User, error) {
+// UserFromPath inspects the user object using /etc/passwd in the specified rootfs.
+// filter can be nil.
+func UserFromPath(root string, filter func(user.User) bool) (user.User, error) {
 	ppath, err := fs.RootPath(root, "/etc/passwd")
 	if err != nil {
 		return user.User{}, err
@@ -866,14 +879,17 @@ func getUserFromPath(root string, filter func(user.User) bool) (user.User, error
 		return user.User{}, err
 	}
 	if len(users) == 0 {
-		return user.User{}, errNoUsersFound
+		return user.User{}, ErrNoUsersFound
 	}
 	return users[0], nil
 }
 
-var errNoGroupsFound = errors.New("no groups found")
+// ErrNoGroupsFound can be returned from GIDFromPath
+var ErrNoGroupsFound = errors.New("no groups found")
 
-func getGIDFromPath(root string, filter func(user.Group) bool) (gid uint32, err error) {
+// GIDFromPath inspects the GID using /etc/passwd in the specified rootfs.
+// filter can be nil.
+func GIDFromPath(root string, filter func(user.Group) bool) (gid uint32, err error) {
 	gpath, err := fs.RootPath(root, "/etc/group")
 	if err != nil {
 		return 0, err
@@ -883,7 +899,7 @@ func getGIDFromPath(root string, filter func(user.Group) bool) (gid uint32, err 
 		return 0, err
 	}
 	if len(groups) == 0 {
-		return 0, errNoGroupsFound
+		return 0, ErrNoGroupsFound
 	}
 	g := groups[0]
 	return uint32(g.Gid), nil
@@ -933,16 +949,13 @@ func WithReadonlyPaths(paths []string) SpecOpts {
 
 // WithWriteableSysfs makes any sysfs mounts writeable
 func WithWriteableSysfs(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
-	for i, m := range s.Mounts {
+	for _, m := range s.Mounts {
 		if m.Type == "sysfs" {
-			var options []string
-			for _, o := range m.Options {
+			for i, o := range m.Options {
 				if o == "ro" {
-					o = "rw"
+					m.Options[i] = "rw"
 				}
-				options = append(options, o)
 			}
-			s.Mounts[i].Options = options
 		}
 	}
 	return nil
@@ -950,16 +963,13 @@ func WithWriteableSysfs(_ context.Context, _ Client, _ *containers.Container, s 
 
 // WithWriteableCgroupfs makes any cgroup mounts writeable
 func WithWriteableCgroupfs(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
-	for i, m := range s.Mounts {
+	for _, m := range s.Mounts {
 		if m.Type == "cgroup" {
-			var options []string
-			for _, o := range m.Options {
+			for i, o := range m.Options {
 				if o == "ro" {
-					o = "rw"
+					m.Options[i] = "rw"
 				}
-				options = append(options, o)
 			}
-			s.Mounts[i].Options = options
 		}
 	}
 	return nil
@@ -1111,7 +1121,7 @@ func WithDefaultUnixDevices(_ context.Context, _ Client, _ *containers.Container
 
 // WithPrivileged sets up options for a privileged container
 var WithPrivileged = Compose(
-	WithAllCapabilities,
+	WithAllCurrentCapabilities,
 	WithMaskedPaths(nil),
 	WithReadonlyPaths(nil),
 	WithWriteableSysfs,
@@ -1184,15 +1194,13 @@ func WithLinuxDevices(devices []specs.LinuxDevice) SpecOpts {
 	}
 }
 
-var ErrNotADevice = errors.New("not a device node")
-
 // WithLinuxDevice adds the device specified by path to the spec
 func WithLinuxDevice(path, permissions string) SpecOpts {
 	return func(_ context.Context, _ Client, _ *containers.Container, s *Spec) error {
 		setLinux(s)
 		setResources(s)
 
-		dev, err := deviceFromPath(path, permissions)
+		dev, err := deviceFromPath(path)
 		if err != nil {
 			return err
 		}
@@ -1223,10 +1231,10 @@ func WithEnvFile(path string) SpecOpts {
 
 		sc := bufio.NewScanner(f)
 		for sc.Scan() {
-			if sc.Err() != nil {
-				return sc.Err()
-			}
 			vars = append(vars, sc.Text())
+		}
+		if err = sc.Err(); err != nil {
+			return err
 		}
 		return WithEnv(vars)(nil, nil, nil, s)
 	}
