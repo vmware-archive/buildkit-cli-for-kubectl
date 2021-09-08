@@ -201,7 +201,7 @@ func buildNodeClient(ctx context.Context, pod *corev1.Pod, restClient rest.Inter
 		return nil, err
 	}
 
-	buildkitClient, err := client.New(ctx, "", client.WithDialer(func(string, time.Duration) (net.Conn, error) {
+	buildkitClient, err := client.New(ctx, "", client.WithContextDialer(func(context.Context, string) (net.Conn, error) {
 		return conn, nil
 	}))
 	if err != nil {
