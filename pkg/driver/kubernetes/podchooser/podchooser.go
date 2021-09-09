@@ -18,7 +18,8 @@ import (
 )
 
 type PodChooser interface {
-	ChoosePod(ctx context.Context) (*corev1.Pod, error)
+	// Returns the selected pod, and zero or more other unselected pods
+	ChoosePod(ctx context.Context) (*corev1.Pod, []*corev1.Pod, error)
 }
 
 type RandomPodChooser struct {
@@ -27,13 +28,13 @@ type RandomPodChooser struct {
 	Deployment *appsv1.Deployment
 }
 
-func (pc *RandomPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) {
+func (pc *RandomPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, []*corev1.Pod, error) {
 	pods, err := ListRunningPods(ctx, pc.PodClient, pc.Deployment)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if len(pods) == 0 {
-		return nil, fmt.Errorf("no builder pods are running")
+		return nil, nil, fmt.Errorf("no builder pods are running")
 	}
 	randSource := pc.RandSource
 	if randSource == nil {
@@ -42,7 +43,7 @@ func (pc *RandomPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) 
 	rnd := rand.New(randSource)
 	n := rnd.Int() % len(pods)
 	logrus.Debugf("RandomPodChooser.ChoosePod(): len(pods)=%d, n=%d", len(pods), n)
-	return pods[n], nil
+	return pods[n], append(pods[0:n], pods[n+1:]...), nil
 }
 
 type StickyPodChooser struct {
@@ -51,10 +52,10 @@ type StickyPodChooser struct {
 	Deployment *appsv1.Deployment
 }
 
-func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) {
+func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, []*corev1.Pod, error) {
 	pods, err := ListRunningPods(ctx, pc.PodClient, pc.Deployment)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	var podNames []string
 	podMap := make(map[string]*corev1.Pod, len(pods))
@@ -73,7 +74,18 @@ func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, error) 
 		}
 		return rpc.ChoosePod(ctx)
 	}
-	return podMap[chosen], nil
+	chosenPod := podMap[chosen]
+	otherPods := make([]*corev1.Pod, len(pods)-1)
+	i := 0
+	for _, pod := range pods {
+		if pod.Name == chosenPod.Name {
+			continue
+		}
+		otherPods[i] = pod
+		i++
+	}
+
+	return chosenPod, otherPods, nil
 }
 
 func ListRunningPods(ctx context.Context, client clientcorev1.PodInterface, depl *appsv1.Deployment) ([]*corev1.Pod, error) {

@@ -4,16 +4,18 @@ package driver
 
 import (
 	"context"
+	"crypto/rand"
+	"fmt"
 	"io"
-	"math/rand"
+	"math/big"
 	"net"
-	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
@@ -36,7 +38,16 @@ const (
 	Stopped
 )
 
-const maxBootRetries = 3
+// RandSleep sleeps a random amount of time between zero and maxMS milliseconds
+func RandSleep(maxMS int64) {
+	sleepTime, err := rand.Int(rand.Reader, big.NewInt(maxMS))
+	if err == nil {
+		time.Sleep(time.Duration(sleepTime.Int64()) * time.Millisecond)
+	} else {
+		logrus.Debugf("failed to get random number: %s", err)
+		time.Sleep(time.Duration(maxMS) * time.Millisecond)
+	}
+}
 
 func (s Status) String() string {
 	switch s {
@@ -66,7 +77,7 @@ type Driver interface {
 	Info(context.Context) (*Info, error)
 	Stop(ctx context.Context, force bool) error
 	Rm(ctx context.Context, force bool) error
-	Client(ctx context.Context) (*client.Client, string, error)
+	Clients(ctx context.Context) (*BuilderClients, error)
 	Features() map[Feature]bool
 	List(ctx context.Context) ([]Builder, error)
 	RuntimeSockProxy(ctx context.Context, name string) (net.Conn, error)
@@ -94,40 +105,51 @@ type Node struct {
 	Platforms []specs.Platform
 }
 
-func Boot(ctx context.Context, d Driver, pw progress.Writer) (*client.Client, string, error) {
-	try := 0
-	rand.Seed(time.Now().UnixNano())
-	for {
-		info, err := d.Info(ctx)
-		if err != nil {
-			return nil, "", err
+type BuilderClients struct {
+	// The builder on the chosen node/pod
+	ChosenNode NodeClient
+
+	// If multiple builders present, clients to the other builders (excluding the chosen pod)
+	OtherNodes []NodeClient
+}
+type NodeClient struct {
+	NodeName       string
+	ClusterAddr    string
+	BuildKitClient *client.Client
+}
+
+func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, error) {
+	err := fmt.Errorf("timeout before starting")
+	var info *Info
+	var results *BuilderClients
+	for err != nil {
+		select {
+		case <-ctx.Done():
+			return nil, errors.Wrap(err, "timed out trying to bootstrap builder")
+		default:
 		}
-		try++
+
+		info, err = d.Info(ctx)
+		if err != nil {
+			return nil, err
+		}
+
 		if info.Status != Running {
-			if try > maxBootRetries {
-				return nil, "", errors.Errorf("failed to bootstrap builder in %d attempts (%s)", try, err)
-			}
 			if err = d.Bootstrap(ctx, func(s *client.SolveStatus) {
 				if pw != nil {
 					pw.Status() <- s
 				}
-			}); err != nil && (strings.Contains(err.Error(), "already exists") || strings.Contains(err.Error(), "not found")) {
-				// This most likely means another build is running in parallel
-				// Give it just enough time to finish creating resources then retry
-				time.Sleep(25 * time.Millisecond * time.Duration(1+rand.Int63n(39))) // 25 - 1000 ms
+			}); err != nil {
+				// Possibly another CLI running in parallel - random sleep then retry
+				RandSleep(100)
 				continue
-			} else if err != nil {
-				return nil, "", err
 			}
 		}
-
-		c, chosenNodeName, err := d.Client(ctx)
+		results, err = d.Clients(ctx)
 		if err != nil {
-			if errors.Cause(err) == ErrNotRunning && try <= maxBootRetries {
-				continue
-			}
-			return nil, "", err
+			// TODO - is there a fail-fast scenario we want to catch here?
+			RandSleep(1000)
 		}
-		return c, chosenNodeName, nil
 	}
+	return results, nil
 }

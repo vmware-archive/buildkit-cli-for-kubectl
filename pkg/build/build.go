@@ -127,18 +127,23 @@ func allIndexes(l int) []int {
 }
 
 func ensureBooted(ctx context.Context, drivers []DriverInfo, idxs []int, pw progress.Writer) (map[string]map[string]*client.Client, error) {
+	lock := sync.Mutex{}
 	clients := map[string]map[string]*client.Client{} // [driverName][chosenNodeName]
 	eg, ctx := errgroup.WithContext(ctx)
 
 	for _, i := range idxs {
+		lock.Lock()
 		clients[drivers[i].Name] = map[string]*client.Client{}
+		lock.Unlock()
 		func(i int) {
 			eg.Go(func() error {
-				c, chosenNodeName, err := driver.Boot(ctx, drivers[i].Driver, pw)
+				builderClients, err := driver.Boot(ctx, drivers[i].Driver, pw)
 				if err != nil {
 					return err
 				}
-				clients[drivers[i].Name][chosenNodeName] = c
+				lock.Lock()
+				clients[drivers[i].Name][builderClients.ChosenNode.NodeName] = builderClients.ChosenNode.BuildKitClient
+				lock.Unlock()
 				return nil
 			})
 		}(i)
