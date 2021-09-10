@@ -1,6 +1,7 @@
 package progressui
 
 import (
+	"container/ring"
 	"context"
 	"fmt"
 	"io"
@@ -17,6 +18,8 @@ const antiFlicker = 5 * time.Second
 const maxDelay = 10 * time.Second
 const minTimeDelta = 5 * time.Second
 const minProgressDelta = 0.05 // %
+
+const logsBufferSize = 10
 
 type lastStatus struct {
 	Current   int64
@@ -57,11 +60,10 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 			p.notFirst = true
 		}
 
-		if os.Getenv("PROGRESS_NO_TRUNC") == "1" {
-			fmt.Fprintf(p.w, "#%d %s\n", v.index, v.Name)
-			fmt.Fprintf(p.w, "#%d %s\n", v.index, v.Digest)
-		} else {
+		if os.Getenv("PROGRESS_NO_TRUNC") == "0" {
 			fmt.Fprintf(p.w, "#%d %s\n", v.index, limitString(v.Name, 72))
+		} else {
+			fmt.Fprintf(p.w, "#%d %s\n", v.index, v.Name)
 		}
 
 	}
@@ -130,6 +132,13 @@ func (p *textMux) printVtx(t *trace, dgst digest.Digest) {
 		fmt.Fprintf(p.w, "%s", []byte(l))
 		if i != len(v.logs)-1 || !v.logsPartial {
 			fmt.Fprintln(p.w, "")
+		}
+		if v.logsBuffer == nil {
+			v.logsBuffer = ring.New(logsBufferSize)
+		}
+		v.logsBuffer.Value = l
+		if !v.logsPartial {
+			v.logsBuffer = v.logsBuffer.Next()
 		}
 	}
 

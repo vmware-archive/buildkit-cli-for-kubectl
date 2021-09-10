@@ -3,34 +3,30 @@ module github.com/vmware-tanzu/buildkit-cli-for-kubectl
 go 1.14
 
 require (
-	github.com/Azure/go-ansiterm v0.0.0-20170929234023-d6e3b3328b78 // indirect
-	github.com/containerd/console v1.0.0
-	github.com/containerd/containerd v1.4.0-0
+	github.com/containerd/console v1.0.2
+	github.com/containerd/containerd v1.5.5
 	github.com/docker/distribution v2.7.1+incompatible
-	github.com/docker/docker v1.14.0-0.20190319215453-e7b5f7dbe98c
-	github.com/gofrs/flock v0.7.1 // indirect
-	github.com/google/shlex v0.0.0-20150127133951-6f45313302b9
-	github.com/moby/buildkit v0.7.1
+	github.com/docker/docker v20.10.7+incompatible
+	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
+	github.com/googleapis/gnostic v0.5.5 // indirect
+	github.com/json-iterator/go v1.1.11 // indirect
+	github.com/moby/buildkit v0.9.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.0.1
 	github.com/pkg/errors v0.9.1
-	github.com/serialx/hashring v0.0.0-20200716010248-6ae9ebe964b0
-	github.com/sirupsen/logrus v1.4.2
-	github.com/spf13/cobra v1.0.0
+	github.com/serialx/hashring v0.0.0-20190422032157-8b2912629002
+	github.com/sirupsen/logrus v1.8.1
+	github.com/spf13/cobra v1.1.1
 	github.com/spf13/pflag v1.0.5
-	github.com/stretchr/testify v1.5.1
-	golang.org/x/crypto v0.0.0-20200221231518-2aa609cf4a9d
-	golang.org/x/net v0.0.0-20200324143707-d3edc9973b7e // indirect
-	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
-	google.golang.org/grpc v1.34.0
-	k8s.io/api v0.18.6
-	k8s.io/apimachinery v0.18.6
-	k8s.io/cli-runtime v0.18.6
-	k8s.io/client-go v0.18.6
+	github.com/stretchr/testify v1.7.0
+	golang.org/x/crypto v0.0.0-20210322153248-0c34fe9e7dc2
+	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+	golang.org/x/sys v0.0.0-20210603081109-ebe580a85c40 // indirect
+	google.golang.org/grpc v1.39.0
+	k8s.io/api v0.21.2
+	k8s.io/apimachinery v0.21.2
+	k8s.io/cli-runtime v0.21.2
+	k8s.io/client-go v0.21.2
 )
-
-replace github.com/containerd/containerd => github.com/containerd/containerd v1.3.1-0.20200227195959-4d242818bf55
-
-replace github.com/docker/docker => github.com/docker/docker v1.4.2-0.20200227233006-38f52c9fec82
 
 replace github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305

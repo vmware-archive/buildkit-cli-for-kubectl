@@ -16,6 +16,8 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	corev1 "k8s.io/api/core/v1"
 	kubeerrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -111,6 +113,17 @@ func (ap *authProvider) Credentials(ctx context.Context, req *auth.CredentialsRe
 	}
 
 	return res, nil
+}
+
+// TODO - to actually implement these properly, use buildkit/session/autrh/authprovider/authprovider.go for inspiration
+func (ap *authProvider) FetchToken(context.Context, *auth.FetchTokenRequest) (*auth.FetchTokenResponse, error) {
+	return nil, status.Errorf(codes.Unavailable, "client side tokens not yet implemented")
+}
+func (ap *authProvider) GetTokenAuthority(context.Context, *auth.GetTokenAuthorityRequest) (*auth.GetTokenAuthorityResponse, error) {
+	return nil, status.Errorf(codes.Unavailable, "client side tokens not yet implemented")
+}
+func (ap *authProvider) VerifyTokenAuthority(context.Context, *auth.VerifyTokenAuthorityRequest) (*auth.VerifyTokenAuthorityResponse, error) {
+	return nil, status.Errorf(codes.Unavailable, "client side tokens not yet implemented")
 }
 
 // decodeAuth decodes a base64 encoded string and returns username and password
