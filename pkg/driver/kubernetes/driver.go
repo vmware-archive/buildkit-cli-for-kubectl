@@ -298,12 +298,12 @@ func (d *Driver) GetVersion(ctx context.Context) (string, error) {
 			Stderr:    true,
 			TTY:       false,
 		}, scheme.ParameterCodec)
+	req.Timeout(10 * time.Second)
 	u := req.URL()
 	exec, err := remotecommand.NewSPDYExecutor(restClientConfig, "POST", u)
 	if err != nil {
 		return "", err
 	}
-	// TODO how to timeout if something goes bad...?
 	serr := exec.Stream(remotecommand.StreamOptions{
 		Stdout: buf,
 		Stderr: os.Stderr,
