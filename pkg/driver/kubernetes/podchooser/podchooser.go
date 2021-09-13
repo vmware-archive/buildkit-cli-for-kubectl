@@ -57,6 +57,9 @@ func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, []*core
 	if err != nil {
 		return nil, nil, err
 	}
+	if len(pods) == 0 {
+		return nil, nil, fmt.Errorf("no builder pods are running")
+	}
 	var podNames []string
 	podMap := make(map[string]*corev1.Pod, len(pods))
 	for _, pod := range pods {
@@ -89,9 +92,13 @@ func (pc *StickyPodChooser) ChoosePod(ctx context.Context) (*corev1.Pod, []*core
 }
 
 func ListRunningPods(ctx context.Context, client clientcorev1.PodInterface, depl *appsv1.Deployment) ([]*corev1.Pod, error) {
+	name := depl.ObjectMeta.Name
+	if name == "" {
+		name = "buildkit" // TODO should be constant someplace...
+	}
 	labelSelector := &metav1.LabelSelector{
 		MatchLabels: map[string]string{
-			"app": depl.ObjectMeta.Name,
+			"app": name,
 		},
 	}
 	selector, err := metav1.LabelSelectorAsSelector(labelSelector)
