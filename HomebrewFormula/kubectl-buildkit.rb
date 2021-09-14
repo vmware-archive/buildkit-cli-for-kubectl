@@ -1,7 +1,7 @@
 class KubectlBuildkit < Formula
   desc "BuildKit CLI for kubectl"
   homepage "https://github.com/vmware-tanzu/buildkit-cli-for-kubectl"
-  url "https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/archive/refs/tags/v0.1.3.tar.gz"
+  url "https://github.com/vmware-tanzu/buildkit-cli-for-kubectl/archive/refs/tags/v0.1.4.tar.gz"
   license "Apache-2.0"
   head "https://github.com/kubernetes/kubernetes.git"
 
