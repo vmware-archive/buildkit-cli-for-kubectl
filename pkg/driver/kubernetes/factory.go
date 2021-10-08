@@ -11,13 +11,13 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/pkg/errors"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/manifest"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/podchooser"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/version"
-
-	"github.com/pkg/errors"
 	"k8s.io/client-go/kubernetes"
+	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp" // register GCP auth provider
 )
 
 const prioritySupported = 40
