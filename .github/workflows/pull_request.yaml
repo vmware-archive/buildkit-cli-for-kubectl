@@ -152,3 +152,121 @@ jobs:
         name: windows.tgz
         path: bin/windows.tgz
         retention-days: 1
+
+  test-integration-containerd-manager:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+      with:
+        fetch-depth: 0
+    - name: Create containerd manager
+      run: |
+        set -x
+        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get update
+        sudo apt-get install -y kubelet kubeadm kubectl
+        sudo swapoff -a
+        # Ensure dockerd isn't running
+        sudo systemctl stop docker.socket
+        sudo systemctl stop docker
+        sudo rm -f /var/run/docker.sock
+        sudo kubeadm init --cri-socket /run/containerd/containerd.sock
+        mkdir -p $HOME/.kube/
+        sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+        sudo chown $USER $HOME/.kube/config
+        sudo kubeadm token create $(kubeadm token generate) --print-join-command --ttl=0 > joincmd.sh
+        # TODO encrypt the payload with a workflow local secret
+    - name: Upload join command
+      uses: actions/upload-artifact@v2
+      with:
+        name: joincmd.${{ github.run_id }}.${{ github.run_attempt}}
+        path: joincmd.sh
+    - name: Finish setup of containerd manager
+      run: |
+        kubectl taint nodes --all node-role.kubernetes.io/master-
+        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
+        kubectl wait --for=condition=ready --timeout=30s node --all
+        kubectl get nodes -o wide
+    - name: Wait for workers to join
+      timeout-minutes: 2
+      run: |
+        env
+        while [ $(kubectl get nodes -o json | jq ".items | length") -ne 2 ]; do
+          echo "Waiting for worker node to come online..."
+          kubectl get nodes
+          sleep 5
+        done
+    - name: Run integration tests
+      run: make integration EXTRA_GO_TEST_FLAGS=-v
+    - name: Shutdown k8s cluster so worker will wind down
+      if: always()
+      run: sudo kubeadm reset
+    - name: Gather integration coverage results
+      uses: codecov/codecov-action@v1
+      with:
+        file: cover-int.out
+        flags: integration-tests
+        name: codecov-integration-test-containerd
+
+  test-integration-containerd-worker:
+    permissions:
+      actions: read
+    runs-on: ubuntu-latest
+    steps:
+    - name: Set up Go ${{ env.GO_VERSION }}
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^${{ env.GO_VERSION }}
+    - uses: actions/checkout@v2
+      name: Check out code into the Go module directory
+      with:
+        fetch-depth: 0
+    - name: Create containerd worker ready
+      run: |
+        set -x
+        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+        sudo apt-get update
+        sudo apt-get install -y kubelet kubeadm kubectl
+        sudo swapoff -a
+        # Ensure dockerd isn't running
+        sudo systemctl stop docker.socket
+        sudo systemctl stop docker
+        sudo rm -f /var/run/docker.sock
+    - name: Get join command
+      run: |
+        set -x
+        while true; do
+          curl -s -H "Accept: application/json" \
+            -H 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+            https://api.github.com/repos/vmware-tanzu/buildkit-cli-for-kubectl/actions/artifacts | grep "joincmd"
+          url=$(curl -s -H "Accept: application/json" \
+            -H 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' \
+            https://api.github.com/repos/vmware-tanzu/buildkit-cli-for-kubectl/actions/artifacts | \
+            jq '.artifacts[] | select(.name | contains("joincmd.${{ github.run_id }}.${{ github.run_attempt}}")) | .url')
+          if [ -n "${url}" ]; then
+             break
+          fi
+          echo "joincmd artifact not available yet..."
+          sleep 5
+        done
+        # TODO decrypt the payload with a workflow local secret
+        mkdir -p $HOME/.kube/
+        curl -s -L -H 'authorization: Bearer ${{ secrets.GITHUB_TOKEN }}' ${url} -o $HOME/.kube/joincmd.sh
+    - name: Join as worker node
+      run: |
+        sudo sh -c "$(cat $HOME/.kube/joincmd.sh) --cri-socket /run/containerd/containerd.sock"
+    - name: Keep alive until node removed from cluster
+      timeout-minutes: 2
+      run: |
+        while [ $(curl http://localhost:10248/healthz) = "ok" ]; do
+          echo "Node still OK"
+          sleep 5
+        done
+        echo "Node no longer OK (expected at end of run), exiting"
