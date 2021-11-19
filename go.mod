@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/containerd/console v1.0.2
-	github.com/containerd/containerd v1.5.7
+	github.com/containerd/containerd v1.5.8
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510
@@ -12,7 +12,7 @@ require (
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/moby/buildkit v0.9.0
 	github.com/opencontainers/go-digest v1.0.0
-	github.com/opencontainers/image-spec v1.0.1
+	github.com/opencontainers/image-spec v1.0.2
 	github.com/pkg/errors v0.9.1
 	github.com/serialx/hashring v0.0.0-20190422032157-8b2912629002
 	github.com/sirupsen/logrus v1.8.1
