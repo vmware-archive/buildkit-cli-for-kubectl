@@ -4,7 +4,7 @@ go 1.14
 
 require (
 	github.com/containerd/console v1.0.2
-	github.com/containerd/containerd v1.5.5
+	github.com/containerd/containerd v1.5.7
 	github.com/docker/distribution v2.7.1+incompatible
 	github.com/docker/docker v20.10.7+incompatible
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510

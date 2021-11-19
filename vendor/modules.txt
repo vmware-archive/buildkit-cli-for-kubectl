@@ -6,7 +6,7 @@ github.com/Microsoft/go-winio/backuptar
 github.com/Microsoft/go-winio/pkg/guid
 github.com/Microsoft/go-winio/pkg/security
 github.com/Microsoft/go-winio/vhd
-# github.com/Microsoft/hcsshim v0.8.18
+# github.com/Microsoft/hcsshim v0.8.21
 github.com/Microsoft/hcsshim
 github.com/Microsoft/hcsshim/computestorage
 github.com/Microsoft/hcsshim/internal/cow
@@ -39,7 +39,7 @@ github.com/containerd/cgroups/stats/v1
 # github.com/containerd/console v1.0.2
 ## explicit
 github.com/containerd/console
-# github.com/containerd/containerd v1.5.5
+# github.com/containerd/containerd v1.5.7
 ## explicit
 github.com/containerd/containerd
 github.com/containerd/containerd/api/services/containers/v1
@@ -214,7 +214,7 @@ github.com/grpc-ecosystem/go-grpc-middleware
 github.com/grpc-ecosystem/grpc-gateway/internal
 github.com/grpc-ecosystem/grpc-gateway/runtime
 github.com/grpc-ecosystem/grpc-gateway/utilities
-# github.com/imdario/mergo v0.3.11
+# github.com/imdario/mergo v0.3.12
 github.com/imdario/mergo
 # github.com/inconshreveable/mousetrap v1.0.0
 github.com/inconshreveable/mousetrap
@@ -296,7 +296,7 @@ github.com/opencontainers/go-digest
 github.com/opencontainers/image-spec/identity
 github.com/opencontainers/image-spec/specs-go
 github.com/opencontainers/image-spec/specs-go/v1
-# github.com/opencontainers/runc v1.0.1
+# github.com/opencontainers/runc v1.0.2
 github.com/opencontainers/runc/libcontainer/user
 # github.com/opencontainers/runtime-spec v1.0.3-0.20210326190908-1c3f411f0417
 github.com/opencontainers/runtime-spec/specs-go
