@@ -60,7 +60,7 @@ documentation for more information.
 
 ## Getting started
 
-### Installing on MacOS
+### Installing on MacOS and Linux with Homebrew
 
 We include a [Brew](https://docs.brew.sh/) Tap in this repo.  First add the Tap with
 ```sh
