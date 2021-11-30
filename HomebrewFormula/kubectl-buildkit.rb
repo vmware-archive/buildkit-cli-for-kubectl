@@ -14,7 +14,14 @@ class KubectlBuildkit < Formula
 
   def install
     system "make", "build", "VERSION=" + version
-    bin.install Dir["bin/darwin/kubectl-build*"]
+    
+    if OS.mac?
+      bin.install Dir["bin/darwin/kubectl-build*"]
+    elsif OS.linux?
+      bin.install Dir["bin/linux/kubectl-build*"]
+    else
+      odie "Only Mac and Linux supported"
+    end
   end
 
   test do
