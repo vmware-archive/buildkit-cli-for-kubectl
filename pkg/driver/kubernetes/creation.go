@@ -83,7 +83,16 @@ func (d *Driver) createBuilder(ctx context.Context, sub progress.SubLogger, user
 			}
 			reportedEvents[msg] = struct{}{}
 			sub.Log(1, []byte(msg))
-			// TODO handle known failure modes here...
+			// TODO handle additional known failure modes here...
+			if event.Type == "Warning" && event.Reason == "Failed" && strings.Contains(event.Message, "Failed to pull image") {
+				// While some image pull failures may be transient, it may take a very long time to converge, so fail fast
+				return fmt.Errorf("%s", event.Message)
+			}
+			if event.Type == "Warning" && event.Reason == "Failed" && strings.Contains(event.Message, "Error: ErrImagePull") {
+				// While some image pull failures may be transient, it may take a very long time to converge, so fail fast
+				return fmt.Errorf("%s", event.Message)
+			}
+
 			if event.Type == "Normal" {
 				continue
 			}
@@ -241,6 +250,10 @@ func (d *Driver) createBuilder(ctx context.Context, sub progress.SubLogger, user
 					}
 					return nil
 				})
+				if err != nil {
+					// If logEvents returns an error, fail fast
+					return err
+				}
 			}
 		}
 		time.Sleep(500 * time.Millisecond)

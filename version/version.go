@@ -7,7 +7,7 @@ var (
 	//Package = "TBD/buildkit-cli"
 
 	// Version holds the complete version number. Filled in at linking time.
-	Version = "v0.0.0+unknown"
+	Version = "dev"
 
 	// DefaultImage hols the primary build image we use
 	DefaultImage = "docker.io/moby/buildkit:buildx-stable-1"
