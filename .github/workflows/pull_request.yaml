@@ -24,7 +24,7 @@ jobs:
     - name: Unit Tests
       run: make test
     - name: Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v2
       with:
         file: cover-unit.out
         flags: unit-tests
@@ -66,9 +66,9 @@ jobs:
         kubectl wait --for=condition=ready --timeout=30s node --all
         kubectl get nodes -o wide
     - name: Run integration tests
-      run: make integration EXTRA_GO_TEST_FLAGS=-v
+      run: make integration TEST_FLAGS=-v
     - name: Gather integration coverage results
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v2
       with:
         file: cover-int.out
         flags: integration-tests
@@ -110,9 +110,9 @@ jobs:
         kubectl get nodes -o wide
 
     - name: Run integration tests
-      run: make integration EXTRA_GO_TEST_FLAGS=-v
+      run: make integration TEST_FLAGS=-v
     - name: Gather integration coverage results
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v2
       with:
         file: cover-int.out
         flags: integration-tests

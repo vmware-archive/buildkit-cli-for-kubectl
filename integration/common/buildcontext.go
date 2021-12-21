@@ -38,10 +38,7 @@ func NewBuildContext(payloads map[string]string) (string, func(), error) {
 
 // NewSimpleBuildContext creates a very simple Dockerfile for exercising the builder
 func NewSimpleBuildContext() (string, func(), error) {
-	proxyImage := os.Getenv("TEST_IMAGE_BASE")
-	if proxyImage == "" {
-		return "", nil, fmt.Errorf("TEST_IMAGE_BASE env var unset")
-	}
+	proxyImage := GetTestImageBase()
 	return NewBuildContext(map[string]string{
 		"Dockerfile": fmt.Sprintf(`FROM %s
 RUN echo "#!/bin/sh" > /run

@@ -1,6 +1,6 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package localregistry
 
 import (
 	"bytes"
@@ -29,6 +29,13 @@ const (
 	RegistryImageName = "docker.io/registry:2.7"
 )
 
+var (
+	FastPlatforms = []string{"linux/386", "linux/amd64", "linux/arm/v6", "linux/arm/v7", "linux/arm64"}
+
+	// Run with -short to skip these slower platforms (larger base images)
+	SlowPlatforms = []string{"windows/amd64"}
+)
+
 type localRegistrySuite struct {
 	suite.Suite
 	Name        string
@@ -49,7 +56,6 @@ type localRegistrySuite struct {
 }
 
 func (s *localRegistrySuite) SetupSuite() {
-	// s.skipTeardown = true
 	var err error
 	ctx := context.Background()
 	s.ClientSet, s.Namespace, err = common.GetKubeClientset()
@@ -260,8 +266,18 @@ func (s *localRegistrySuite) TearDownSuite() {
 
 		ctx := context.Background()
 
+		// Grab logs from the registry in case there are any interesting failures
+		pod, err := s.podClient.Get(ctx, s.registryName, metav1.GetOptions{})
+		if err != nil {
+			logrus.Warnf("failed to get registry pod for logs %s: %s", s.registryName, err)
+		} else {
+			logrus.Infof("--- BEGIN REGISTRY LOGS ---")
+			common.LogPodLogs(ctx, []corev1.Pod{*pod}, s.Namespace, s.ClientSet)
+			logrus.Infof("--- END REGISTRY LOGS ---")
+		}
+
 		// Clean everything up...
-		err := s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
+		err = s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
 		if err != nil {
 			logrus.Warnf("failed to clean up pod %s: %s", s.registryName, err)
 		}
@@ -429,11 +445,18 @@ func main() {
 	require.NoError(s.T(), err, "%s: config file creation", s.Name)
 	defer cleanup()
 	imageName := s.registryFQDN + "/" + s.Name + "multiarchcrosscompile:latest"
+	var platforms []string
+	if testing.Short() {
+		platforms = FastPlatforms[0:2]
+	} else {
+		platforms = append(FastPlatforms, SlowPlatforms...)
+	}
+
 	args := []string{"--progress=plain",
 		"--builder", s.Name,
 		"--push",
 		"--tag", imageName,
-		"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		"--platform", strings.Join(platforms, ","),
 		dir,
 	}
 	err = common.RunBuild(args, common.RunBuildStreams{})
@@ -455,12 +478,17 @@ func (s *localRegistrySuite) TestVersion() {
 }
 
 func TestLocalRegistrySuite(t *testing.T) {
-	common.Skipper(t)
 	// TODO this testcase should be safe to run parallel, but I'm seeing failures in CI that look
 	// like containerd runtime concurrency problems.  They don't seem related to this particular change though
 	//t.Parallel()
+	skipTeardown := false
+	skipTeardownStr := os.Getenv("SKIP_TEARDOWN")
+	if skipTeardownStr != "" {
+		skipTeardown = true
+	}
 	suite.Run(t, &localRegistrySuite{
-		Name: "regtest",
+		Name:         "regtest",
+		skipTeardown: skipTeardown,
 		// Debug set in the config file
 	})
 }

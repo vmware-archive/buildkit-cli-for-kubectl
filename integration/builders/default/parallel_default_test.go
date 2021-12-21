@@ -1,6 +1,6 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package dflt
 
 import (
 	"context"
@@ -98,8 +98,12 @@ func (s *parallelDefaultSuite) TestParallelDefaultBuilds() {
 }
 
 func TestParallelDefaultBuildSuite(t *testing.T) {
-	common.Skipper(t)
 	// We don't parallelize with other tests, since we use the default builder name
+	// Clean up any pre-existing default builder before proceeding
+	_ = common.RunBuildkit("rm", []string{
+		"buildkit",
+	}, common.RunBuildStreams{})
+
 	suite.Run(t, &parallelDefaultSuite{
 		Name:        "buildkit",
 		CreateFlags: []string{"--buildkitd-flags=--debug"},

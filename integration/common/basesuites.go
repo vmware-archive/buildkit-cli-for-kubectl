@@ -156,7 +156,7 @@ func (s *BaseSuite) TestLs() {
 
 func (s *BaseSuite) TestBuildWithSecret() {
 	logrus.Infof("%s: Build with Secret", s.Name)
-	proxyImage := os.Getenv("TEST_IMAGE_BASE")
+	proxyImage := GetTestImageBase()
 
 	dir, cleanup, err := NewBuildContext(map[string]string{
 		"Dockerfile": fmt.Sprintf(`# syntax=docker/dockerfile:experimental
@@ -205,7 +205,7 @@ func (s *BaseSuite) TestBuildWithSSHKey() {
 	s.T().Skip("Skipping SSH test as it's too flaky")
 
 	logrus.Infof("%s: Build with SSH key", s.Name)
-	proxyImage := os.Getenv("TEST_IMAGE_BASE")
+	proxyImage := GetTestImageBase()
 
 	// Note: if the key is not valid, the socket will not be created, so simply checking for
 	// its existence is sufficient to verify the ssh plumbing is working.
@@ -260,4 +260,12 @@ RUN --mount=type=ssh,id=myssh echo "SSH_AUTH_SOCK=${SSH_AUTH_SOCK}" && ls -l ${S
 	}
 
 	require.NoError(s.T(), err, "build failed")
+}
+
+func GetTestImageBase() string {
+	base := os.Getenv("TEST_IMAGE_BASE")
+	if base == "" {
+		base = "busybox"
+	}
+	return base
 }

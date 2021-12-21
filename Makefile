@@ -1,8 +1,7 @@
 # Copyright (C) 2020 VMware, Inc.
 # SPDX-License-Identifier: Apache-2.0
 
-VERSION?=$(shell git describe --tags --first-parent --abbrev=7 --long --dirty --always)
-TEST_KUBECONFIG?=$(HOME)/.kube/config
+VERSION?=dev
 TEST_TIMEOUT=600s
 TEST_PARALLELISM=3
 
@@ -45,6 +44,8 @@ GO_DEPS=$(foreach dir,$(shell go list -deps -f '{{.Dir}}' ./cmd/kubectl-buildkit
 REVISION=$(shell git describe --match 'v[0-9]*' --always --dirty --tags)
 GO_FLAGS=-ldflags "-X $(GO_MOD_NAME)/version.Version=${VERSION} -X $(GO_MOD_NAME)/version.DefaultHelperImage=$(BUILDKIT_PROXY_IMAGE)" -mod=vendor
 GO_COVER_FLAGS=-cover -coverpkg=./... -covermode=count
+UNIT_TEST_PACKAGES=$(shell go list ./... | grep -v "/integration/")
+COVERAGE_FILTERS=grep -v "\.pb\.go" | grep -v "/integration/"
 
 .PHONY: help
 help:
@@ -105,28 +106,37 @@ $(BIN_DIR)/%.tgz: $(BIN_DIR)/%/*
 generate:
 	go generate ./...
 
+
 .PHONY: test
 test:
-	go test $(GO_FLAGS) $(GO_COVER_FLAGS) -coverprofile=./cover-unit.out ./...
+	go test $(GO_FLAGS) \
+		-parallel $(TEST_PARALLELISM) \
+		$(TEST_FLAGS)  \
+		$(GO_COVER_FLAGS) -coverprofile=./cover-unit-full.out \
+		$(UNIT_TEST_PACKAGES)
+	cat ./cover-unit-full.out | $(COVERAGE_FILTERS) > ./cover-unit.out
+	rm -f ./cover-unit-full.out
+
 
 .PHONY: integration
 integration:
-	@echo "Running integration tests with $(TEST_KUBECONFIG)"
+	@echo "Running integration tests"
 	@kubectl config get-contexts
-	TEST_KUBECONFIG=$(TEST_KUBECONFIG) go test -timeout $(TEST_TIMEOUT) $(GO_FLAGS) \
+	go test -timeout $(TEST_TIMEOUT) $(GO_FLAGS) \
 		-parallel $(TEST_PARALLELISM) \
-		$(EXTRA_GO_TEST_FLAGS)  \
-		$(GO_COVER_FLAGS) -coverprofile=./cover-int.out \
+		$(TEST_FLAGS)  \
+		$(GO_COVER_FLAGS) -coverprofile=./cover-int-full.out \
 		./integration/...
-
+	cat ./cover-int-full.out | $(COVERAGE_FILTERS) > ./cover-int.out
+	rm -f ./cover-int-full.out
 	go tool cover -html=./cover-int.out -o ./cover-int.html
 
 .PHONY: coverage
 coverage: cover.html
 
 cover.html: cover-int.out cover-unit.out
-	cp cover-int.out cover.out
-	tail +2 cover-unit.out >> cover.out
+	cat cover-int.out > cover.out
+	tail +2 cover-unit.out | $(COVERAGE_FILTERS) >> cover.out
 	go tool cover -html=./cover.out -o ./cover.html
 	go tool cover -func cover.out | grep total:
 	open ./cover.html

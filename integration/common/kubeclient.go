@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 	"k8s.io/client-go/kubernetes"
@@ -30,6 +31,18 @@ func GetKubeClientset() (*kubernetes.Clientset, string, error) {
 		return nil, "", err
 	}
 	clientset, err := kubernetes.NewForConfig(restClientConfig)
+	if err != nil {
+		return nil, "", err
+	}
+
+	// Verify the cluster is accessible so we can fail fast
+	content, err := clientset.Discovery().RESTClient().Get().AbsPath("/livez").DoRaw(context.Background())
+	if err != nil {
+		return nil, "", errors.Wrap(err, "kubernetes cluster is unhealthy or inaccessible")
+	}
+	if !strings.Contains(string(content), "ok") {
+		return nil, "", fmt.Errorf("kubernetes cluster is unhealthy or inaccessible: %s", string(content))
+	}
 	return clientset, ns, err
 }
 
@@ -196,6 +209,11 @@ func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kube
 	}
 	logrus.Infof("Detected %d pods for builder %s - gathering logs", len(pods), name)
 	logrus.Infof("--- BEGIN BUILDER LOGS ---")
+	LogPodLogs(ctx, pods, namespace, clientset)
+	logrus.Infof("--- END BUILDER LOGS ---")
+}
+
+func LogPodLogs(ctx context.Context, pods []v1.Pod, namespace string, clientset *kubernetes.Clientset) {
 	podClient := clientset.CoreV1().Pods(namespace)
 	for _, pod := range pods {
 		for _, ctr := range pod.Spec.Containers {
@@ -211,6 +229,5 @@ func LogBuilderLogs(ctx context.Context, name, namespace string, clientset *kube
 			}
 		}
 	}
-	logrus.Infof("--- END BUILDER LOGS ---")
 
 }

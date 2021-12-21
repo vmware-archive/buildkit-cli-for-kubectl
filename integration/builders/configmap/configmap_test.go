@@ -1,6 +1,6 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package configmap
 
 import (
 	"context"
@@ -206,7 +206,6 @@ func (s *configMapSuite) TestPreExistingWithCustomCreate() {
 }
 
 func TestConfigMapSuite(t *testing.T) {
-	common.Skipper(t)
 	t.Parallel()
 	suite.Run(t, &configMapSuite{
 		Name:        "configmaptest",
