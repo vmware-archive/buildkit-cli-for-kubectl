@@ -163,7 +163,19 @@ func GetNodes(ctx context.Context, clientset *kubernetes.Clientset) ([]v1.Node, 
 	if err != nil {
 		return nil, err
 	}
-	return nodes.Items, nil
+
+	// Remove any nodes that aren't ready
+	res := []v1.Node{}
+	for _, node := range nodes.Items {
+		for _, condition := range node.Status.Conditions {
+			if condition.Type == v1.NodeReady && condition.Status == v1.ConditionTrue {
+				res = append(res, node)
+				logrus.Debugf("Node %s is ready", node.Name)
+				continue
+			}
+		}
+	}
+	return res, nil
 }
 
 func GetBuilderNodes(ctx context.Context, name, namespace string, clientset *kubernetes.Clientset) ([]string, error) {
