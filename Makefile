@@ -12,8 +12,8 @@ export DOCKER_HUB_LIBRARY_PROXY_CACHE
 # TODO wire this up so it's passed into the build of the binaries instead of replicating the hardcoded string
 BUILDKIT_PROXY_IMAGE=ghcr.io/vmware-tanzu/buildkit-proxy
 TEST_IMAGE_BASE=$(DOCKER_HUB_LIBRARY_PROXY_CACHE)busybox
-BUILDER_BASE?=$(DOCKER_HUB_LIBRARY_PROXY_CACHE)golang:1.14-alpine
-ALPINE_BASE?=$(DOCKER_HUB_LIBRARY_PROXY_CACHE)alpine:3.12
+BUILDER_BASE?=$(DOCKER_HUB_LIBRARY_PROXY_CACHE)golang:1.17-bullseye
+RUNTIME_BASE?=$(DOCKER_HUB_LIBRARY_PROXY_CACHE)debian:bullseye-slim
 
 
 export TEST_IMAGE_BASE 
@@ -74,7 +74,7 @@ image:
 		--build-arg BUILDKIT_PROXY_IMAGE=$(BUILDKIT_PROXY_IMAGE) \
 		--build-arg VERSION=$(VERSION) \
 		--build-arg BUILDER_BASE=$(BUILDER_BASE) \
-		--build-arg ALPINE_BASE=$(ALPINE_BASE) \
+		--build-arg RUNTIME_BASE=$(RUNTIME_BASE) \
 		-f ./builder/Dockerfile .
 
 # TODO refine so this can support native kubectl build/save
