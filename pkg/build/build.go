@@ -23,6 +23,7 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/docker/distribution/reference"
@@ -1067,11 +1068,12 @@ func newContainerdLoader(ctx context.Context, d driver.Driver, kubeClientConfig 
 						return conn, nil
 					},
 				),
-				grpc.WithInsecure(), // Nested connection on an existing secure transport
+				grpc.WithTransportCredentials(insecure.NewCredentials()), //  Nested connection on an existing secure transport
+				grpc.WithAuthority(nodeName),
 			}),
 		)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to set up docker client via proxy: %w", err)
+			return nil, nil, fmt.Errorf("failed to set up containerd client via proxy: %w", err)
 		}
 
 		pr, pw := io.Pipe()

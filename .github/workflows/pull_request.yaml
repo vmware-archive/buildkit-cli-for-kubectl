@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 env:
-  GO_VERSION: "1.16"
+  GO_VERSION: "1.17"
 
 jobs:
   test-unit:
