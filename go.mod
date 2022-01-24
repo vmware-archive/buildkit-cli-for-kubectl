@@ -28,3 +28,5 @@ require (
 )
 
 replace github.com/jaguilar/vt100 => github.com/tonistiigi/vt100 v0.0.0-20190402012908-ad4c4a574305
+
+replace github.com/opencontainers/runc => github.com/opencontainers/runc v1.0.3
