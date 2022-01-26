@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"strings"
 	"time"
 
 	"github.com/moby/buildkit/client"
@@ -18,6 +19,7 @@ import (
 	"github.com/sirupsen/logrus"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/imagetools"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/progress"
+	pb "github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/proxy/proto"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/store"
 )
 
@@ -117,6 +119,7 @@ type NodeClient struct {
 	NodeName       string
 	ClusterAddr    string
 	BuildKitClient *client.Client
+	ProxyClient    *pb.ProxyClient // nil if running in rootless mode
 }
 
 func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, error) {
@@ -141,6 +144,9 @@ func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, e
 					pw.Status() <- s
 				}
 			}); err != nil {
+				if failFast(err) {
+					return nil, err
+				}
 				// Possibly another CLI running in parallel - random sleep then retry
 				RandSleep(100)
 				continue
@@ -148,9 +154,26 @@ func Boot(ctx context.Context, d Driver, pw progress.Writer) (*BuilderClients, e
 		}
 		results, err = d.Clients(ctx)
 		if err != nil {
-			// TODO - is there a fail-fast scenario we want to catch here?
+			if failFast(err) {
+				return nil, err
+			}
 			RandSleep(1000)
 		}
 	}
 	return results, nil
+}
+
+// Return true for failure cases that we don't want to retry for
+func failFast(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "Failed to pull image") {
+		return true
+	} else if strings.Contains(msg, "Error: ErrImagePull") {
+		return true
+	}
+	// TODO - over time add other fail-fast scenarios here to bypass our retry logic for transient errors
+	return false
 }

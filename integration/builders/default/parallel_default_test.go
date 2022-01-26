@@ -1,17 +1,17 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package dflt
 
 import (
 	"context"
 	"fmt"
-	"sync"
 	"testing"
 
 	"github.com/sirupsen/logrus"
 	"github.com/stretchr/testify/require"
 	"github.com/stretchr/testify/suite"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/integration/common"
+	"golang.org/x/sync/errgroup"
 
 	"k8s.io/client-go/kubernetes"
 	v1 "k8s.io/client-go/kubernetes/typed/core/v1"
@@ -37,11 +37,20 @@ func (s *parallelDefaultSuite) SetupSuite() {
 	s.configMapClient = s.ClientSet.CoreV1().ConfigMaps(s.Namespace)
 }
 
+func (s *parallelDefaultSuite) TearDownSuite() {
+	common.LogBuilderLogs(context.Background(), s.Name, s.Namespace, s.ClientSet)
+	logrus.Infof("%s: Removing builder", s.Name)
+	err := common.RunBuildkit("rm", []string{
+		s.Name,
+	}, common.RunBuildStreams{})
+	require.NoError(s.T(), err, "%s: builder rm failed", s.Name)
+}
+
 func (s *parallelDefaultSuite) TestParallelDefaultBuilds() {
 	logrus.Infof("%s: Parallel %d Build", s.Name, ParallelDefaultBuildCount)
 
 	dirs := make([]string, ParallelDefaultBuildCount)
-	errors := make([]error, ParallelDefaultBuildCount)
+	ctx := context.Background()
 
 	// Create the contexts before threading
 	for i := 0; i < ParallelDefaultBuildCount; i++ {
@@ -50,12 +59,13 @@ func (s *parallelDefaultSuite) TestParallelDefaultBuilds() {
 		require.NoError(s.T(), err, "Failed to set up temporary build context")
 		defer cleanup()
 	}
-	wg := &sync.WaitGroup{}
-	wg.Add(ParallelDefaultBuildCount)
+	nodeNames, err := common.GetBuilderNodes(ctx, s.Name, s.Namespace, s.ClientSet)
+	require.NoError(s.T(), err, "failed to get builder node names")
+	g, ctx := errgroup.WithContext(ctx)
 
-	for i := 0; i < ParallelDefaultBuildCount; i++ {
-		go func(i int) {
-			defer wg.Done()
+	for j := 0; j < ParallelDefaultBuildCount; j++ {
+		i := j
+		g.Go(func() error {
 			imageName := fmt.Sprintf("dummy.acme.com/pbuild:%d", i)
 			args := []string{
 				"--progress=plain",
@@ -64,28 +74,36 @@ func (s *parallelDefaultSuite) TestParallelDefaultBuilds() {
 			}
 			err := common.RunBuild(args, common.RunBuildStreams{})
 			if err != nil {
-				errors[i] = err
-				return
+				return err
 			}
-			errors[i] = common.RunSimpleBuildImageAsPod(
-				context.Background(),
-				fmt.Sprintf("%s-testbuiltimage-%d", s.Name, i),
-				imageName,
-				s.Namespace,
-				s.ClientSet,
-			)
 
-		}(i)
+			for _, nodeName := range nodeNames {
+				err = common.RunSimpleBuildImageAsPod(
+					ctx,
+					fmt.Sprintf("%s-testbuiltimage-%d", s.Name, i),
+					imageName,
+					s.Namespace,
+					nodeName,
+					s.ClientSet,
+				)
+				if err != nil {
+					return err
+				}
+			}
+			return nil
+		})
 	}
-	wg.Wait()
-	for i := 0; i < ParallelDefaultBuildCount; i++ {
-		require.NoError(s.T(), errors[i], "build/run %d failed", i)
-	}
+	err = g.Wait()
+	require.NoError(s.T(), err, "build/run failed")
 }
 
 func TestParallelDefaultBuildSuite(t *testing.T) {
-	common.Skipper(t)
 	// We don't parallelize with other tests, since we use the default builder name
+	// Clean up any pre-existing default builder before proceeding
+	_ = common.RunBuildkit("rm", []string{
+		"buildkit",
+	}, common.RunBuildStreams{})
+
 	suite.Run(t, &parallelDefaultSuite{
 		Name:        "buildkit",
 		CreateFlags: []string{"--buildkitd-flags=--debug"},

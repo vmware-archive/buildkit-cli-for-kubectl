@@ -3,6 +3,7 @@
 package common
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -37,10 +38,11 @@ func NewBuildContext(payloads map[string]string) (string, func(), error) {
 
 // NewSimpleBuildContext creates a very simple Dockerfile for exercising the builder
 func NewSimpleBuildContext() (string, func(), error) {
+	proxyImage := GetTestImageBase()
 	return NewBuildContext(map[string]string{
-		"Dockerfile": `FROM busybox
+		"Dockerfile": fmt.Sprintf(`FROM %s
 RUN echo "#!/bin/sh" > /run
 RUN echo "echo hello world" >> /run && chmod a+x /run
 CMD /run
-`})
+`, proxyImage)})
 }

@@ -1,6 +1,6 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package dflt
 
 import (
 	"bytes"
@@ -26,8 +26,11 @@ func (s *DefaultSuite) TestVersion() {
 }
 
 func TestDefaultSuite(t *testing.T) {
-	common.Skipper(t)
-	t.Parallel()
+	// Clean up any pre-existing default builder before proceeding
+	_ = common.RunBuildkit("rm", []string{
+		"buildkit",
+	}, common.RunBuildStreams{})
+
 	suite.Run(t, &DefaultSuite{
 		BaseSuite: common.BaseSuite{
 			Name: "buildkit", // TODO pull this from the actual default name

@@ -76,7 +76,7 @@ func ParseOutputs(inp []string) ([]client.ExportEntry, error) {
 		case client.ExporterOCI, client.ExporterDocker, client.ExporterTar:
 			dest, ok := out.Attrs["dest"]
 			if !ok {
-				if out.Type != client.ExporterDocker {
+				if out.Type != client.ExporterDocker && out.Type != client.ExporterOCI {
 					dest = "-"
 				}
 			}

@@ -112,6 +112,7 @@ func (d *Driver) initDriverFromConfig() error {
 	deploymentOpt := &manifest.DeploymentOpt{
 		Name:                   deploymentName,
 		Image:                  version.DefaultImage,
+		ProxyImage:             version.GetProxyImage(),
 		Replicas:               1,
 		BuildkitFlags:          cfg.BuildkitFlags,
 		Rootless:               false,
@@ -128,6 +129,8 @@ func (d *Driver) initDriverFromConfig() error {
 		switch k {
 		case "image":
 			imageOverride = v
+		case "proxy-image":
+			deploymentOpt.ProxyImage = v
 		case "namespace":
 			d.namespace = v
 		case "replicas":

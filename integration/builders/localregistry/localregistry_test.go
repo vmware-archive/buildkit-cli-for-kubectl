@@ -1,11 +1,12 @@
 // Copyright (C) 2020 VMware, Inc.
 // SPDX-License-Identifier: Apache-2.0
-package suites
+package localregistry
 
 import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -28,6 +29,13 @@ const (
 	RegistryImageName = "docker.io/registry:2.7"
 )
 
+var (
+	FastPlatforms = []string{"linux/386", "linux/amd64", "linux/arm/v6", "linux/arm/v7", "linux/arm64"}
+
+	// Run with -short to skip these slower platforms (larger base images)
+	SlowPlatforms = []string{"windows/amd64"}
+)
+
 type localRegistrySuite struct {
 	suite.Suite
 	Name        string
@@ -48,7 +56,6 @@ type localRegistrySuite struct {
 }
 
 func (s *localRegistrySuite) SetupSuite() {
-	// s.skipTeardown = true
 	var err error
 	ctx := context.Background()
 	s.ClientSet, s.Namespace, err = common.GetKubeClientset()
@@ -95,7 +102,10 @@ func (s *localRegistrySuite) SetupSuite() {
 			"htpasswd": []byte(htpass),
 		},
 	}
-	_, err = s.configMapClient.Create(context.Background(), cfgMap, metav1.CreateOptions{})
+
+	// Note: on some classes of test failures resource can leak, so we also delete before create
+	_ = s.configMapClient.Delete(ctx, cfgMap.Name, metav1.DeleteOptions{})
+	_, err = s.configMapClient.Create(ctx, cfgMap, metav1.CreateOptions{})
 	require.NoError(s.T(), err, "%s: create configmap failed", s.Name)
 
 	// Create some registry credentials
@@ -119,11 +129,14 @@ func (s *localRegistrySuite) SetupSuite() {
 			),
 		},
 	}
-	_, err = s.secretClient.Create(context.Background(), secret, metav1.CreateOptions{})
+	_ = s.secretClient.Delete(ctx, secret.Name, metav1.DeleteOptions{})
+	_, err = s.secretClient.Create(ctx, secret, metav1.CreateOptions{})
 	require.NoError(s.T(), err, "%s: create registry secret failed", s.Name)
 
 	// Start up the local registry
 	logrus.Infof("%s: Running local registry pod %s with cert", s.Name, s.registryName)
+	var zero64 int64
+	_ = s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{GracePeriodSeconds: &zero64})
 	_, err = s.podClient.Create(ctx,
 		&corev1.Pod{
 			ObjectMeta: metav1.ObjectMeta{
@@ -194,6 +207,7 @@ func (s *localRegistrySuite) SetupSuite() {
 	require.NoError(s.T(), err, "%s: create registry pod failed", s.Name)
 
 	logrus.Infof("%s: Creating ClusterIP Service for registry %s", s.Name, s.registryName)
+	_ = s.serviceClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
 	_, err = s.serviceClient.Create(ctx,
 		&corev1.Service{
 			ObjectMeta: metav1.ObjectMeta{
@@ -237,6 +251,12 @@ func (s *localRegistrySuite) SetupSuite() {
 		},
 		s.CreateFlags...,
 	)
+	nodes, err := common.GetNodes(context.Background(), s.ClientSet)
+	require.NoError(s.T(), err, "%s: get nodes failed", s.Name)
+	if len(nodes) > 1 {
+		args = append(args, fmt.Sprintf("--replicas=%d", len(nodes)))
+	}
+
 	err = common.RunBuildkit("create", args, common.RunBuildStreams{})
 	require.NoError(s.T(), err, "%s: builder creation failed", s.Name)
 }
@@ -246,8 +266,18 @@ func (s *localRegistrySuite) TearDownSuite() {
 
 		ctx := context.Background()
 
+		// Grab logs from the registry in case there are any interesting failures
+		pod, err := s.podClient.Get(ctx, s.registryName, metav1.GetOptions{})
+		if err != nil {
+			logrus.Warnf("failed to get registry pod for logs %s: %s", s.registryName, err)
+		} else {
+			logrus.Infof("--- BEGIN REGISTRY LOGS ---")
+			common.LogPodLogs(ctx, []corev1.Pod{*pod}, s.Namespace, s.ClientSet)
+			logrus.Infof("--- END REGISTRY LOGS ---")
+		}
+
 		// Clean everything up...
-		err := s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
+		err = s.podClient.Delete(ctx, s.registryName, metav1.DeleteOptions{})
 		if err != nil {
 			logrus.Warnf("failed to clean up pod %s: %s", s.registryName, err)
 		}
@@ -287,6 +317,23 @@ func (s *localRegistrySuite) TestBuildWithPush() {
 		"--builder", s.Name,
 		"--push",
 		"--tag", imageName,
+		dir,
+	}
+	err = common.RunBuild(args, common.RunBuildStreams{})
+	require.NoError(s.T(), err, "build failed")
+	// Note, we can't run the image we just built since it was pushed to the local registry, which isn't ~directly visible to the runtime
+}
+
+func (s *localRegistrySuite) TestBuildWithImageOutputPush() {
+	logrus.Infof("%s: Registry Image Output Push Build", s.Name)
+
+	dir, cleanup, err := common.NewSimpleBuildContext()
+	defer cleanup()
+	require.NoError(s.T(), err, "Failed to set up temporary build context")
+	imageName := s.registryFQDN + "/" + s.Name + "replaceme:2"
+	args := []string{"--progress=plain",
+		"--builder", s.Name,
+		"--output", "type=image,push=true,name=" + imageName,
 		dir,
 	}
 	err = common.RunBuild(args, common.RunBuildStreams{})
@@ -360,7 +407,9 @@ func (s *localRegistrySuite) TestBuildPushWithoutTag() {
 	require.Contains(s.T(), err.Error(), "tag is needed when pushing to registry")
 }
 func (s *localRegistrySuite) TestMultiArchCrossCompile() {
-	DockerfileCross := `FROM --platform=$BUILDPLATFORM golang:latest AS builder
+	proxyCache := os.Getenv("DOCKER_HUB_LIBRARY_PROXY_CACHE")
+
+	DockerfileCross := fmt.Sprintf(`FROM --platform=$BUILDPLATFORM %sgolang:latest AS builder
 WORKDIR /project
 COPY *.go ./
 
@@ -379,7 +428,7 @@ ENV TERM="xterm-256color"
 ENTRYPOINT ["\\multiarch-test.exe"]
 
 FROM release-$TARGETOS
-`
+`, proxyCache)
 	GoCode := `package main
 import (
     "fmt"
@@ -396,11 +445,18 @@ func main() {
 	require.NoError(s.T(), err, "%s: config file creation", s.Name)
 	defer cleanup()
 	imageName := s.registryFQDN + "/" + s.Name + "multiarchcrosscompile:latest"
+	var platforms []string
+	if testing.Short() {
+		platforms = FastPlatforms[0:2]
+	} else {
+		platforms = append(FastPlatforms, SlowPlatforms...)
+	}
+
 	args := []string{"--progress=plain",
 		"--builder", s.Name,
 		"--push",
 		"--tag", imageName,
-		"--platform", "linux/386,linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,windows/amd64",
+		"--platform", strings.Join(platforms, ","),
 		dir,
 	}
 	err = common.RunBuild(args, common.RunBuildStreams{})
@@ -422,12 +478,17 @@ func (s *localRegistrySuite) TestVersion() {
 }
 
 func TestLocalRegistrySuite(t *testing.T) {
-	common.Skipper(t)
 	// TODO this testcase should be safe to run parallel, but I'm seeing failures in CI that look
 	// like containerd runtime concurrency problems.  They don't seem related to this particular change though
 	//t.Parallel()
+	skipTeardown := false
+	skipTeardownStr := os.Getenv("SKIP_TEARDOWN")
+	if skipTeardownStr != "" {
+		skipTeardown = true
+	}
 	suite.Run(t, &localRegistrySuite{
-		Name: "regtest",
+		Name:         "regtest",
+		skipTeardown: skipTeardown,
 		// Debug set in the config file
 	})
 }

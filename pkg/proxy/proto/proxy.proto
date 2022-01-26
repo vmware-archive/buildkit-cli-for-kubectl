@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package vmware_tanzu.buildkit_cli_for_kubectl.proxy.v1;
+
+// The Proxy service binds to the local gRPC socket, and not the network
+service Proxy {
+    // Starting listening on a port on all interfaces for incoming ImageLoader.Load requests
+    // Callers to Load must pass the key as returned from this API
+    rpc Listen(ListenRequest) returns (ListenResponse);
+
+    // Stop Listening.
+    rpc StopListen(ListenResponse) returns (StopListenResponse);
+
+    // Replicate built images to the following other nodes in the cluster
+    rpc Replicate(ReplicateRequest) returns (ReplicateResponse);
+}
+
+// The ImageLoader binds to the network on the default port number when Proxy.Listen is called
+service ImageLoader {
+    // Load the image stream to the local runtime.
+    // Sender must send the "key" in grpc Metadata on the request, and 
+    // the key value must match the Listen response for this node
+    rpc Load(stream BytesMessage) returns (LoadResponse);
+}
+
+message ListenRequest {
+    // TODO - Future tunables
+}
+
+message ListenResponse {
+    // This randomly generated key must be passed to Load to accept incoming images
+    string key = 1;
+}
+
+message StopListenResponse {
+    // TODO - future details
+}
+
+message ReplicateRequest {
+    repeated Node nodes = 1;
+}
+
+message Node {
+    string key = 1;
+    string addr = 2; // Use the Cluster IP of the pod
+}
+
+message ReplicateResponse {
+    // TODO - future usage
+}
+
+message BytesMessage {
+    bytes data = 1;
+}
+
+message LoadResponse {
+    // TODO - future details
+}

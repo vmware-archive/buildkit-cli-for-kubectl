@@ -5,6 +5,7 @@ package common
 import (
 	"io"
 	"os"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 	"github.com/spf13/pflag"
@@ -27,10 +28,6 @@ type RunBuildStreams struct {
 func RunBuild(args []string, streams RunBuildStreams) error {
 	flags := pflag.NewFlagSet("kubectl-build", pflag.ExitOnError)
 	pflag.CommandLine = flags
-	finalArgs := append(
-		[]string{"--kubeconfig", os.Getenv("TEST_KUBECONFIG")},
-		args...,
-	)
 	if streams.In == nil {
 		streams.In = os.Stdin
 	}
@@ -43,19 +40,53 @@ func RunBuild(args []string, streams RunBuildStreams) error {
 
 	// TODO do we want to capture the output someplace else?
 	root := commands.NewRootBuildCmd(genericclioptions.IOStreams{In: streams.In, Out: streams.Out, ErrOut: streams.Err})
-	root.SetArgs(finalArgs)
-	logrus.Infof("Build: %v", finalArgs)
+	root.SetArgs(args)
+	logrus.Infof("Build: %v", args)
 
-	return root.Execute()
+	// BUG! - there's some flakiness in the layers beneath us - we'll retry up to 3 times for lease failures inside buildkit
+	// example: "Error: failed to solve: failed to compute cache key: lease does not exist: not found"
+	limit := 3
+	var err error
+	for i := 0; i < limit; i++ {
+		err = root.Execute()
+		if err != nil && strings.Contains(err.Error(), "failed to compute cache key") {
+			logrus.Warnf("Hit flaky error in buildkit: %d of %d - %s", i+1, limit, err)
+			continue
+		}
+		break
+	}
+	return err
 }
 
 func RunBuildkit(command string, args []string, streams RunBuildStreams) error {
 	flags := pflag.NewFlagSet("kubectl-buildkit", pflag.ExitOnError)
 	pflag.CommandLine = flags
 	finalArgs := append(
-		[]string{command, "--kubeconfig", os.Getenv("TEST_KUBECONFIG")},
+		[]string{command},
 		args...,
 	)
+
+	if altBuildKitImage := os.Getenv("TEST_ALT_BUILDKIT_IMAGE"); altBuildKitImage != "" {
+		isCreate := false
+		hasRootless := false
+		hasImage := false
+		for _, arg := range finalArgs {
+			if strings.Contains(arg, "--rootless") {
+				hasRootless = true
+			} else if strings.Contains(arg, "--image") {
+				hasImage = true
+			} else if arg == "create" {
+				isCreate = true
+			}
+		}
+		if isCreate && !hasImage {
+			if hasRootless {
+				finalArgs = append(finalArgs, "--image", altBuildKitImage+"-rootless")
+			} else {
+				finalArgs = append(finalArgs, "--image", altBuildKitImage)
+			}
+		}
+	}
 	logrus.Infof("CMD: %v", finalArgs)
 	if streams.In == nil {
 		streams.In = os.Stdin
