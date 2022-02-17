@@ -28,7 +28,7 @@ CI_ARCHIVES=$(foreach os,$(CI_OSES),$(BIN_DIR)/$(os).tgz)
 GO_MOD_NAME=github.com/vmware-tanzu/buildkit-cli-for-kubectl
 GO_DEPS=$(foreach dir,$(shell go list -deps -f '{{.Dir}}' ./cmd/kubectl-buildkit ./cmd/kubectl-build),$(wildcard $(dir)/*.go)) Makefile
 REVISION=$(shell git describe --match 'v[0-9]*' --always --dirty --tags)
-GO_FLAGS=-ldflags "-X $(GO_MOD_NAME)/version.Version=${VERSION}" -mod=vendor
+GO_FLAGS=-ldflags "-buildid= -s -w -X $(GO_MOD_NAME)/version.Version=${VERSION}" -mod=vendor
 GO_COVER_FLAGS=-cover -coverpkg=./... -covermode=count
 
 .PHONY: help
@@ -44,10 +44,10 @@ clean:
 build: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
 
 $(BIN_DIR)/%/kubectl-buildkit $(BIN_DIR)/%/kubectl-buildkit.exe: $(GO_DEPS)
-	GOOS=$* go build $(GO_FLAGS) -o $@ ./cmd/kubectl-buildkit
+	GOOS=$* go build -trimpath $(GO_FLAGS) -o $@ ./cmd/kubectl-buildkit
 
 $(BIN_DIR)/%/kubectl-build $(BIN_DIR)/%/kubectl-build.exe: $(GO_DEPS)
-	GOOS=$* go build $(GO_FLAGS) -o $@  ./cmd/kubectl-build
+	GOOS=$* go build -trimpath $(GO_FLAGS) -o $@  ./cmd/kubectl-build
 
 install: $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build
 	cp $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-buildkit $(BIN_DIR)/$(NATIVE_ARCH)/kubectl-build $(INSTALL_DIR)
