@@ -17,7 +17,9 @@ import (
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/pkg/driver/kubernetes/podchooser"
 	"github.com/vmware-tanzu/buildkit-cli-for-kubectl/version"
 	"k8s.io/client-go/kubernetes"
-	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp" // register GCP auth provider
+
+	// Load all auth plugins
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 const prioritySupported = 40

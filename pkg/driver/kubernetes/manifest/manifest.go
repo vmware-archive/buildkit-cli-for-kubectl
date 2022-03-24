@@ -96,7 +96,7 @@ func NewDeployment(opt *DeploymentOpt) (*appsv1.Deployment, error) {
 								Privileged: &privileged,
 							},
 							ReadinessProbe: &corev1.Probe{
-								Handler: corev1.Handler{
+								ProbeHandler: corev1.ProbeHandler{
 									Exec: &corev1.ExecAction{
 										Command: []string{"buildctl", "debug", "workers"},
 									},
