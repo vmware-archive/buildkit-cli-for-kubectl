@@ -12,11 +12,10 @@ linters:
     - errcheck
     # - gofmt
     - goimports
-    - golint
+    - revive
     - gosimple
     - govet
     - ineffassign
-    - interfacer
     - nakedret
     - misspell
     - staticcheck

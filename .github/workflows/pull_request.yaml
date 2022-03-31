@@ -122,9 +122,9 @@ jobs:
     - name: Check-out code
       uses: actions/checkout@v2
     - name: Lint
-      uses: golangci/golangci-lint-action@v2
+      uses: golangci/golangci-lint-action@v3
       with:
-        version: v1.29
+        version: v1.45
 
   build:
     runs-on: ubuntu-latest
