@@ -15,6 +15,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	// Load all auth plugins
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // GetKubeClientset retrieves the clientset and namespace
