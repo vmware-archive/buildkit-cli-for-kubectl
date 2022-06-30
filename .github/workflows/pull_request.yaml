@@ -58,6 +58,7 @@ jobs:
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $USER $HOME/.kube/config
         kubectl taint nodes --all node-role.kubernetes.io/master-
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane-
         kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
         kubectl wait --for=condition=ready --timeout=30s node --all
         kubectl get nodes -o wide
@@ -99,6 +100,7 @@ jobs:
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $USER $HOME/.kube/config
         kubectl taint nodes --all node-role.kubernetes.io/master-
+        kubectl taint nodes --all node-role.kubernetes.io/control-plane-
         kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
         kubectl wait --for=condition=ready --timeout=30s node --all
         kubectl get nodes -o wide
