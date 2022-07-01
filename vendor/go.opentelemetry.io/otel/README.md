@@ -11,14 +11,14 @@ It provides a set of APIs to directly measure performance and behavior of your s
 
 ## Project Status
 
-**Warning**: this project is currently in a pre-GA phase. Backwards
-incompatible changes may be introduced in subsequent minor version releases as
-we work to track the evolving OpenTelemetry specification and user feedback.
+| Signal  | Status     | Project |
+| ------- | ---------- | ------- |
+| Traces  | Stable     | N/A     |
+| Metrics | Alpha      | N/A     |
+| Logs    | Frozen [1] | N/A     |
 
-Our progress towards a GA release candidate is tracked in [this project
-board](https://github.com/orgs/open-telemetry/projects/5). This release
-candidate will follow semantic versioning and will be released with a major
-version greater than zero.
+- [1]: The Logs signal development is halted for this project while we develop both Traces and Metrics.
+   No Logs Pull Requests are currently being accepted.
 
 Progress and status specific to this repository is tracked in our local
 [project boards](https://github.com/open-telemetry/opentelemetry-go/projects)
@@ -28,33 +28,29 @@ and
 Project versioning information and stability guarantees can be found in the
 [versioning documentation](./VERSIONING.md).
 
-| Signal | Status |
-| --- | --- |
-| Traces | Stable [release](https://github.com/orgs/open-telemetry/projects/5) is primary focus |
-| Metrics | Development paused [1] |
-| Logs | Frozen [2] |
-
-- [1]: The development of the metrics API and SDK has paused due to limited development resources, prioritization of a stable Traces release, and instability of the official overall design from the OpenTelemetry specification.
-   Pull Requests for metrics related issues are not being accepted currently outside of security vulnerability mitigations.
-- [2]: The Logs signal development is halted for this project while we develop both Traces and Metrics.
-   No Logs Pull Requests are currently being accepted.
-
 ### Compatibility
+
+OpenTelemetry-Go attempts to track the current supported versions of the
+[Go language](https://golang.org/doc/devel/release#policy). The release
+schedule after a new minor version of go is as follows:
+
+- The first release or one month, which ever is sooner, will add build steps for the new go version.
+- The first release after three months will remove support for the oldest go version.
 
 This project is tested on the following systems.
 
 | OS      | Go Version | Architecture |
 | ------- | ---------- | ------------ |
+| Ubuntu  | 1.17       | amd64        |
 | Ubuntu  | 1.16       | amd64        |
-| Ubuntu  | 1.15       | amd64        |
+| Ubuntu  | 1.17       | 386          |
 | Ubuntu  | 1.16       | 386          |
-| Ubuntu  | 1.15       | 386          |
+| MacOS   | 1.17       | amd64        |
 | MacOS   | 1.16       | amd64        |
-| MacOS   | 1.15       | amd64        |
+| Windows | 1.17       | amd64        |
 | Windows | 1.16       | amd64        |
-| Windows | 1.15       | amd64        |
+| Windows | 1.17       | 386          |
 | Windows | 1.16       | 386          |
-| Windows | 1.15       | 386          |
 
 While this project should work for other systems, no compatibility guarantees
 are made for those systems currently.
