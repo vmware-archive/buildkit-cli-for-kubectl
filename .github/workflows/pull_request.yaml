@@ -8,6 +8,8 @@ on:
 
 env:
   GO_VERSION: "1.16"
+  CRI_DOCKERD_VERSION: "0.2.3"
+  CRI_DOCKERD_DEB_VERSION: "0.2.3.3-0"
 
 jobs:
   test-unit:
@@ -88,14 +90,18 @@ jobs:
         sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
         echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
         sudo swapoff -a
+        # Install cri-dockerd
+        curl -fsSLo /tmp/cri-dockerd.amd64.deb https://github.com/Mirantis/cri-dockerd/releases/download/v${CRI_DOCKERD_VERSION}/cri-dockerd_${CRI_DOCKERD_DEB_VERSION}.ubuntu-focal_amd64.deb
         # Note: Default docker setup (cgroupfs) is incompatible with default kubelet (systemd) so one has to be changed
         #       since k8s recommends against cgroupfs, we'll use systemd
         sudo sh -c "echo '{\"exec-opts\": [\"native.cgroupdriver=systemd\"]}' > /etc/docker/daemon.json"
         sudo systemctl restart docker
         sudo apt-get update
         sudo apt-get install -y kubelet kubeadm kubectl
+        # Note, package deps in cri-dockerd missing moby-containerd as option
+        sudo dpkg --force-depends -i /tmp/cri-dockerd.amd64.deb
         docker info
-        sudo kubeadm init -v 5 || (sudo journalctl -u kubelet; exit 1)
+        sudo kubeadm init -v 5 --cri-socket unix:///var/run/cri-dockerd.sock || (sudo journalctl -u kubelet; exit 1)
         mkdir -p $HOME/.kube/
         sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
         sudo chown $USER $HOME/.kube/config
