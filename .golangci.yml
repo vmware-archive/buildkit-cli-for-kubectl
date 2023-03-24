@@ -8,11 +8,11 @@ run:
 linters:
   disable-all: true
   enable:
-    - deadcode
+    # - deadcode
     - errcheck
     # - gofmt
     - goimports
-    - revive
+    # - revive
     - gosimple
     - govet
     - ineffassign
@@ -23,7 +23,7 @@ linters:
     - typecheck
     - unused
     - unconvert
-    - varcheck
+    # - varcheck
     - vet
     - vetshadow
 

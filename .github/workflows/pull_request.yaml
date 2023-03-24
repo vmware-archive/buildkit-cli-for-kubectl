@@ -7,26 +7,26 @@ on:
     branches: [ main ]
 
 env:
-  GO_VERSION: "1.16"
-  CRI_DOCKERD_VERSION: "0.2.3"
-  CRI_DOCKERD_DEB_VERSION: "0.2.3.3-0"
+  GO_VERSION: "1.20"
+  CRI_DOCKERD_VERSION: "0.3.1"
+  CRI_DOCKERD_DEB_VERSION: "0.3.1.3-0"
 
 jobs:
   test-unit:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ^${{ env.GO_VERSION }}
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       name: Check out code into the Go module directory
       with:
         fetch-depth: 0
     - name: Unit Tests
       run: make test
     - name: Codecov
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
         file: cover-unit.out
         flags: unit-tests
@@ -36,38 +36,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ^${{ env.GO_VERSION }}
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       name: Check out code into the Go module directory
       with:
         fetch-depth: 0
     - name: Setup containerd cluster
+      env:
+        CRI_SOCKET_INIT_ARG: "--cri-socket unix:///run/containerd/containerd.sock"
       run: |
         set -x
-        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-        sudo apt-get update
-        sudo apt-get install -y kubelet kubeadm kubectl
-        sudo swapoff -a
         # Ensure dockerd isn't running
         sudo systemctl stop docker.socket
         sudo systemctl stop docker
         sudo rm -f /var/run/docker.sock
-        sudo kubeadm init --cri-socket /run/containerd/containerd.sock
-        mkdir -p $HOME/.kube/
-        sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-        sudo chown $USER $HOME/.kube/config
-        kubectl taint nodes --all node-role.kubernetes.io/master-
-        kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
-        kubectl wait --for=condition=ready --timeout=30s node --all
-        kubectl get nodes -o wide
+        sudo ctr version
+        ./.github/workflows/cluster-init.sh
     - name: Run integration tests
       run: make integration EXTRA_GO_TEST_FLAGS=-v
     - name: Gather integration coverage results
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
         file: cover-int.out
         flags: integration-tests
@@ -77,44 +67,31 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ^${{ env.GO_VERSION }}
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       name: Check out code into the Go module directory
       with:
         fetch-depth: 0
     - name: Setup kubeadm cluster with default docker runtime
+      env:
+        CRI_SOCKET_INIT_ARG: "--cri-socket unix:///var/run/cri-dockerd.sock"
       run: |
         set -x
-        sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
-        echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
-        sudo swapoff -a
         # Install cri-dockerd
-        curl -fsSLo /tmp/cri-dockerd.amd64.deb https://github.com/Mirantis/cri-dockerd/releases/download/v${CRI_DOCKERD_VERSION}/cri-dockerd_${CRI_DOCKERD_DEB_VERSION}.ubuntu-focal_amd64.deb
-        # Note: Default docker setup (cgroupfs) is incompatible with default kubelet (systemd) so one has to be changed
-        #       since k8s recommends against cgroupfs, we'll use systemd
-        sudo sh -c "echo '{\"exec-opts\": [\"native.cgroupdriver=systemd\"]}' > /etc/docker/daemon.json"
-        sudo systemctl restart docker
-        sudo apt-get update
-        sudo apt-get install -y kubelet kubeadm kubectl
+        curl -fsSLo /tmp/cri-dockerd.amd64.deb https://github.com/Mirantis/cri-dockerd/releases/download/v${CRI_DOCKERD_VERSION}/cri-dockerd_${CRI_DOCKERD_DEB_VERSION}.ubuntu-jammy_amd64.deb
         # Note, package deps in cri-dockerd missing moby-containerd as option
         sudo dpkg --force-depends -i /tmp/cri-dockerd.amd64.deb
-        docker info
-        sudo kubeadm init -v 5 --cri-socket unix:///var/run/cri-dockerd.sock || (sudo journalctl -u kubelet; exit 1)
-        mkdir -p $HOME/.kube/
-        sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
-        sudo chown $USER $HOME/.kube/config
-        kubectl taint nodes --all node-role.kubernetes.io/master-
-        kubectl taint nodes --all node-role.kubernetes.io/control-plane-
-        kubectl apply -f https://docs.projectcalico.org/manifests/calico.yaml
-        kubectl wait --for=condition=ready --timeout=30s node --all
-        kubectl get nodes -o wide
-
+        # Note: Default docker setup (cgroupfs) is incompatible with default kubelet (systemd) so one has to be changed
+        #       since k8s recommends against cgroupfs, we'll use systemd
+        # sudo sh -c "echo '{\"exec-opts\": [\"native.cgroupdriver=systemd\"]}' > /etc/docker/daemon.json"
+        # sudo systemctl restart docker
+        ./.github/workflows/cluster-init.sh
     - name: Run integration tests
       run: make integration EXTRA_GO_TEST_FLAGS=-v
     - name: Gather integration coverage results
-      uses: codecov/codecov-action@v1
+      uses: codecov/codecov-action@v3
       with:
         file: cover-int.out
         flags: integration-tests
@@ -124,38 +101,39 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v4
       with:
         go-version: ^${{ env.GO_VERSION }}
+        cache: false
     - name: Check-out code
-      uses: actions/checkout@v2
+      uses: actions/checkout@v3
     - name: Lint
       uses: golangci/golangci-lint-action@v3
       with:
-        version: v1.45
+        version: v1.52
 
   build:
     runs-on: ubuntu-latest
     steps:
     - name: Set up Go ${{ env.GO_VERSION }}
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v3
       with:
         go-version: ^${{ env.GO_VERSION }}
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       name: Check out code into the Go module directory
     - name: Build
       run: make dist
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: darwin.tgz
         path: bin/darwin.tgz
         retention-days: 1
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: linux.tgz
         path: bin/linux.tgz
         retention-days: 1
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: windows.tgz
         path: bin/windows.tgz
